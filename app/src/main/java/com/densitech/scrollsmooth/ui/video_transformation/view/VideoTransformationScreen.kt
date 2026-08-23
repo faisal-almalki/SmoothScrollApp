@@ -35,6 +35,7 @@ import androidx.navigation.NavController
 import com.densitech.scrollsmooth.ui.audio.AudioSelectionBottomSheet
 import com.densitech.scrollsmooth.ui.audio.AudioSelectionViewModel
 import com.densitech.scrollsmooth.ui.bottom_sheet.SheetCollapsed
+import com.densitech.scrollsmooth.ui.main.Screen
 import com.densitech.scrollsmooth.ui.bottom_sheet.SheetContent
 import com.densitech.scrollsmooth.ui.bottom_sheet.SheetExpanded
 import com.densitech.scrollsmooth.ui.text.model.TextOverlayParams
@@ -322,6 +323,11 @@ fun VideoTransformationScreen(
                 ),
                 onBackClick = {
                     navController.popBackStack()
+                },
+                onNextClick = {
+                    // Publishing continues in the commerce flow: pick which listings this
+                    // video sells before it is posted.
+                    navController.navigate(Screen.TagProducts.create("local_${selectedVideo.id}"))
                 },
                 onTransformGestureChanged = { key, pan, zoom, rotation ->
                     videoTransformationViewModel.onTransformGestureChanged(key, pan, zoom, rotation)

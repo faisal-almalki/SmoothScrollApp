@@ -11,7 +11,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.PagerState
@@ -30,6 +33,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import com.densitech.scrollsmooth.R
+import com.densitech.scrollsmooth.ui.commerce.data.CommerceCatalog
+import com.densitech.scrollsmooth.ui.commerce.model.Product
+import com.densitech.scrollsmooth.ui.commerce.view.AddedToCartBanner
+import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
+import com.densitech.scrollsmooth.ui.commerce.view.ProductDetailSheet
+import com.densitech.scrollsmooth.ui.commerce.view.ProductListSheet
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.ShopViewModel
 import com.densitech.scrollsmooth.ui.video.model.ScreenState
 import com.densitech.scrollsmooth.ui.video.model.VideoItemParams
 import com.densitech.scrollsmooth.ui.video.viewmodel.VideoScreenViewModel
@@ -43,7 +54,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @ExperimentalPermissionsApi
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun VideoScreen(pagerState: PagerState, videoScreenViewModel: VideoScreenViewModel) {
+fun VideoScreen(
+    pagerState: PagerState,
+    videoScreenViewModel: VideoScreenViewModel,
+    shopViewModel: ShopViewModel,
+    cartViewModel: CartViewModel,
+    onOpenCart: () -> Unit,
+    onOpenCheckout: () -> Unit,
+    onOpenSeller: (String) -> Unit,
+    onOpenLive: (String) -> Unit,
+) {
     val context = LocalContext.current
     val lifeCycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
@@ -51,6 +71,12 @@ fun VideoScreen(pagerState: PagerState, videoScreenViewModel: VideoScreenViewMod
     val playerPool = videoScreenViewModel.playerPool.collectAsState()
     val screenState = videoScreenViewModel.screenState.collectAsState()
     val videoDownloadedListState = videoScreenViewModel.videoDownloadedList.collectAsState()
+
+    // Commerce state layered over the feed.
+    val cart by cartViewModel.cart.collectAsState()
+    val banner by cartViewModel.banner.collectAsState()
+    val openProduct by shopViewModel.openProduct.collectAsState()
+    var productListSheet by remember { mutableStateOf<List<Product>?>(null) }
 
     // State management
     var currentActiveIndex by remember { mutableIntStateOf(videoScreenViewModel.currentPlayingIndex) }
@@ -183,6 +209,18 @@ fun VideoScreen(pagerState: PagerState, videoScreenViewModel: VideoScreenViewMod
                         val mediaInfo =
                             videoScreenViewModel.getCurrentMediaInfo(mediaItem.mediaMetadata)
 
+                        // Tagging is derived from the video id, so it only needs recomputing
+                        // when the page actually shows a different video.
+                        val taggedProducts = remember(mediaInfo.videoId) {
+                            shopViewModel.productsForVideo(mediaInfo.videoId)
+                        }
+                        val tagSeller = remember(taggedProducts) {
+                            shopViewModel.seller(taggedProducts.firstOrNull()?.sellerId)
+                        }
+                        val sellerLiveStream = remember(tagSeller) {
+                            tagSeller?.let { CommerceCatalog.liveStreamForSeller(it.id) }
+                        }
+
                         VideoItemView(
                             params = VideoItemParams(
                                 playerPool = currentPlayerPool,
@@ -190,8 +228,25 @@ fun VideoScreen(pagerState: PagerState, videoScreenViewModel: VideoScreenViewMod
                                 currentToken = realPage,
                                 currentMediaSource = mediaSource,
                                 mediaInfo = mediaInfo,
-                                isDownloaded = downloadedVideoList.contains(mediaItem.localConfiguration?.uri.toString())
+                                isDownloaded = downloadedVideoList.contains(mediaItem.localConfiguration?.uri.toString()),
+                                taggedProducts = taggedProducts,
+                                seller = tagSeller,
+                                isSellerLiveNow = sellerLiveStream != null,
+                                cartItemCount = cart.itemCount,
                             ),
+                            onProductClick = { product ->
+                                videoScreenViewModel.pauseAllPlayer()
+                                shopViewModel.openProduct(product)
+                            },
+                            onSeeAllProductsClick = { products ->
+                                videoScreenViewModel.pauseAllPlayer()
+                                productListSheet = products
+                            },
+                            onCartClick = onOpenCart,
+                            onSellerClick = onOpenSeller,
+                            onWatchLiveClick = {
+                                sellerLiveStream?.let { stream -> onOpenLive(stream.id) }
+                            },
                             onPlayerReady = { token, exoPlayer ->
                                 videoScreenViewModel.onPlayerReady(token, exoPlayer)
                             },
@@ -227,6 +282,24 @@ fun VideoScreen(pagerState: PagerState, videoScreenViewModel: VideoScreenViewMod
                                 .alpha(0.2f),
                         )
                     }
+
+                    AnimatedVisibility(
+                        visible = banner != null,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                            .padding(CommerceDimens.ScreenPadding)
+                    ) {
+                        AddedToCartBanner(
+                            text = banner.orEmpty(),
+                            onDismiss = cartViewModel::dismissBanner,
+                            onViewCart = {
+                                cartViewModel.dismissBanner()
+                                onOpenCart()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
@@ -244,6 +317,41 @@ fun VideoScreen(pagerState: PagerState, videoScreenViewModel: VideoScreenViewMod
                     videoScreenViewModel.loadDownloadedVideoList()
                 })
         }
+    }
+
+    // Buy sheet for a single tagged product.
+    openProduct?.let { product ->
+        ProductDetailSheet(
+            product = product,
+            onDismiss = shopViewModel::closeProduct,
+            onAddToCart = { selection ->
+                cartViewModel.addToCart(selection)
+                shopViewModel.closeProduct()
+            },
+            onBuyNow = { selection ->
+                cartViewModel.addToCart(selection)
+                shopViewModel.closeProduct()
+                onOpenCheckout()
+            },
+            onOpenSeller = { sellerId ->
+                shopViewModel.closeProduct()
+                onOpenSeller(sellerId)
+            },
+        )
+    }
+
+    // Everything this video is selling, when it carries more than one product.
+    productListSheet?.let { products ->
+        ProductListSheet(
+            title = "Shop this video",
+            subtitle = "${products.size} products from this creator",
+            products = products,
+            onDismiss = { productListSheet = null },
+            onProductClick = { product ->
+                productListSheet = null
+                shopViewModel.openProduct(product)
+            },
+        )
     }
 }
 

@@ -41,6 +41,7 @@ fun MainPreviewContent(
     params: MainPreviewContentParams,
     onTransformGestureChanged: (String, Offset, Float, Float) -> Unit,
     onBackClick: () -> Unit,
+    onNextClick: () -> Unit,
     onActionClick: (TransformationAction) -> Unit,
     onTextOverlayDeleted: (String) -> Unit,
     onEditTextOverlay: (TextOverlayParams) -> Unit,
@@ -97,7 +98,9 @@ fun MainPreviewContent(
                 onBackClick = {
                     onBackClick.invoke()
                 },
-                onMoreClick = {},
+                onNextClick = {
+                    onNextClick.invoke()
+                },
                 onHeightChange = {
                     heightOfTopButton = it
                 },

@@ -15,6 +15,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.densitech.scrollsmooth.R
+import com.densitech.scrollsmooth.ui.commerce.view.CartIconWithBadge
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 import com.densitech.scrollsmooth.ui.video.model.VideoActionParams
 
@@ -25,9 +26,22 @@ fun VideoActionView(
     onCommentClick: (Int) -> Unit,
     onShareClick: (Int) -> Unit,
     onDownloadClick: (Int) -> Unit,
+    onShopClick: (Int) -> Unit,
+    onCartClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (params.taggedProductCount > 0) {
+            VideoActionItemView(
+                icon = painterResource(id = R.drawable.ic_shop_bag_24),
+                value = if (params.taggedProductCount > 1) "${params.taggedProductCount}" else "Shop",
+                onItemClick = {
+                    onShopClick.invoke(params.token)
+                },
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
+        }
+
         VideoActionItemView(
             icon = painterResource(id = R.drawable.ic_heart_icon),
             value = "${params.likeCount}",
@@ -51,6 +65,14 @@ fun VideoActionView(
             onItemClick = {
                 onShareClick.invoke(params.token)
             },
+            modifier = Modifier.padding(top = 10.dp),
+        )
+
+        CartIconWithBadge(
+            itemCount = params.cartItemCount,
+            onClick = onCartClick,
+            iconSize = 32,
+            label = "Cart",
             modifier = Modifier.padding(top = 10.dp),
         )
 
@@ -105,17 +127,15 @@ private fun VideoActionViewPreview() {
             likeCount = 10,
             commentCount = 10,
             shareCount = 10,
-            isDownloaded = false
-        ), {
-
-        },
-        {
-
-        },
-        {
-
-        },
-        {
-
-        })
+            isDownloaded = false,
+            cartItemCount = 3,
+            taggedProductCount = 2,
+        ),
+        onLikeClick = {},
+        onCommentClick = {},
+        onShareClick = {},
+        onDownloadClick = {},
+        onShopClick = {},
+        onCartClick = {},
+    )
 }

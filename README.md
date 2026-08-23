@@ -1,18 +1,81 @@
 # SmoothScroll
 
-SmoothScroll is an Android app designed to provide a smooth video scrolling experience, similar to TikTok or YouTube Shorts, but with a focus on performance, caching, and prefetching. The app allows users to preview video thumbnails while seeking through the video and includes additional features for adaptive streaming and video download.
-I used Media3 ExoPlayer to achieve video playback
+SmoothScroll is a video commerce app for Android: a TikTok style vertical feed where every video
+is shoppable, creators sell their own products, and live rooms let you buy while you watch.
+
+It is built on top of a high performance Media3 ExoPlayer feed with caching, prefetching and
+thumbnail scrubbing, so the shopping layer never costs you scroll performance.
+
+## Shopping
+
+- **Shoppable feed:** every video carries a product tag. A bag pill expands over the video a beat
+  after playback starts; tapping it opens the buy sheet without leaving the feed.
+- **Live shopping:** a Live tab of creators selling on camera. Each room has a running viewer
+  count, a live chat with a purchase ticker, a pinned product the seller is talking about, and a
+  flash sale clock. The live price applies only while the clock is running.
+- **Shop tab:** search across products and creators, filter by category, and a trending grid with
+  the live rooms surfaced on top.
+- **Cart and checkout:** one cart shared by the feed, the live rooms and the shop tab, with a free
+  shipping threshold, tax estimate, address form, payment method and an order confirmation.
+- **Orders:** every order is kept, including whether it was bought in the feed or in a live.
+
+## Selling
+
+Every account on this platform is a shop, so the creator page and the storefront are the same page.
+
+- **Storefront:** a creator's listings, follower count, seller rating, and a shortcut into their
+  live room when they are streaming.
+- **Creator Studio:** gross sales, payout after the platform fee, units sold, orders, and the
+  listings you manage.
+- **List a product:** a short form (title, price, stock, category, one variant axis) with a live
+  preview of the card buyers will see.
+- **Tag products on a video:** the publishing step after trimming and editing, where you choose
+  which of your listings the video sells.
+
+## Video playback
+
+- **Smooth Scrolling Performance:** designed to handle fast scrolling with optimized performance.
+- **Thumbnail Preview:** view video thumbnails while seeking to different durations in the video.
+- **Caching and Prefetching:** efficiently caches and prefetches video and thumbnail data.
+- **Video creation:** create a custom video by selecting a video, adding audio, trimming, and
+  adding a text overlay.
+
+## Commerce architecture
+
+The commerce feature lives under `ui/commerce`:
+
+| Package | Responsibility |
+| --- | --- |
+| `commerce/model` | Products, sellers, cart, orders, live streams. Prices are integer minor units. |
+| `commerce/data` | Seeded catalogue and repositories (cart, orders, products, seller, live). |
+| `commerce/viewmodel` | `CartViewModel`, `ShopViewModel`, `LiveViewModel`, `CreatorViewModel`. |
+| `commerce/view` | Shared components: product card, buy sheet, price rows, feed overlay. |
+| `commerce/shop`, `commerce/cart`, `commerce/live`, `commerce/profile`, `commerce/creator` | Screens. |
+
+The commerce view models are resolved once in `MainScreen` at activity scope, so the cart the feed
+adds to is the same cart the shop tab and checkout read.
+
+### What is real and what is not
+
+There is no commerce backend behind this build, so:
+
+- The catalogue is seeded in `CommerceCatalog`; products you list in Creator Studio are layered on
+  top of it and do enter the feed's tag pool, so your own listings show up on feed videos.
+- Cart, orders, listings, follows and video tags persist across launches via `SharedPreferences`
+  (`CommerceStore`), not a server.
+- Live rooms play a looping video source. The viewer count, chat and purchase ticker are simulated
+  in `LiveRepository`; there is no ingest or WebRTC.
+- Checkout records a payment method on the order. **Nothing is charged and no payment processor is
+  integrated.**
+- Videos you create are not uploaded, so a video you tag products on is saved against a local id
+  rather than published to the feed.
+- Products have no photographs. Each one renders as a gradient derived from its id plus an emoji,
+  so the grids stay stable and work offline.
+
 
 # Video Demo
 
 https://github.com/user-attachments/assets/3898de67-bd3e-4132-8085-c849ce3d133c
-
-## Features
-
-- **Smooth Scrolling Performance:** Designed to handle fast scrolling with optimized performance.
-- **Thumbnail Preview:** View video thumbnails while seeking to different durations in the video.
-- **Caching and Prefetching:** Efficiently caches and prefetches video and thumbnail data to enhance user experience and reduce loading times.
-- **Video creation** Create custom video by select video, add audio, trim video, add text overlay
 
 ## Upcoming Features
 

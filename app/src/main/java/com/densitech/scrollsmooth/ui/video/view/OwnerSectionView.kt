@@ -33,6 +33,8 @@ fun OwnerSectionView(
     onOwnerClick: (String) -> Unit,
     onTagClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    // The shoppable feed shows the creator in its own strip, so the caption drops the name.
+    showOwnerName: Boolean = true,
 ) {
     var isExpand by remember { mutableStateOf(false) }
 
@@ -62,13 +64,15 @@ fun OwnerSectionView(
         horizontalAlignment = Alignment.Start
     ) {
         // Owner Name
-        Text(
-            text = owner,
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.clickableNoRipple { onOwnerClick(owner) }
-        )
+        if (showOwnerName) {
+            Text(
+                text = owner,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickableNoRipple { onOwnerClick(owner) }
+            )
+        }
 
         // Clickable Combined Text
         Box(

@@ -2,6 +2,7 @@ package com.densitech.scrollsmooth.ui.video.view
 
 import android.annotation.SuppressLint
 import androidx.annotation.OptIn
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +31,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.densitech.scrollsmooth.ui.commerce.model.Product
+import com.densitech.scrollsmooth.ui.commerce.view.VideoProductPill
+import com.densitech.scrollsmooth.ui.commerce.view.VideoSellerStrip
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 import com.densitech.scrollsmooth.ui.video.PlayerSurface
 import com.densitech.scrollsmooth.ui.video.SURFACE_TYPE_SURFACE_VIEW
@@ -49,6 +53,11 @@ fun VideoItemView(
     onPlayerDestroy: (Int) -> Unit,
     onPauseClick: (Boolean) -> Unit,
     onDownloadVideoClick: (Int) -> Unit,
+    onProductClick: (Product) -> Unit,
+    onSeeAllProductsClick: (List<Product>) -> Unit,
+    onCartClick: () -> Unit,
+    onSellerClick: (String) -> Unit,
+    onWatchLiveClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -236,7 +245,9 @@ fun VideoItemView(
                         likeCount = 10,
                         commentCount = 10,
                         shareCount = 10,
-                        isDownloaded = params.isDownloaded
+                        isDownloaded = params.isDownloaded,
+                        cartItemCount = params.cartItemCount,
+                        taggedProductCount = params.taggedProducts.size,
                     ),
                     onLikeClick = {},
                     onCommentClick = {},
@@ -244,6 +255,15 @@ fun VideoItemView(
                     onDownloadClick = {
                         onDownloadVideoClick.invoke(params.currentToken)
                     },
+                    onShopClick = {
+                        val products = params.taggedProducts
+                        if (products.size == 1) {
+                            onProductClick.invoke(products.first())
+                        } else if (products.isNotEmpty()) {
+                            onSeeAllProductsClick.invoke(products)
+                        }
+                    },
+                    onCartClick = onCartClick,
                     modifier = Modifier
                         .constrainAs(actionView) {
                             end.linkTo(parent.end, 16.dp)
@@ -251,18 +271,7 @@ fun VideoItemView(
                         }
                 )
 
-                OwnerSectionView(
-                    owner = params.mediaInfo.owner.name,
-                    content = params.mediaInfo.title,
-                    tags = params.mediaInfo.tags,
-                    onOwnerClick = { owner ->
-                        // Handle navigate to owner account here
-                        println(owner)
-                    },
-                    onTagClick = { tag ->
-                        // Handle navigate to tag search here
-                        println(tag)
-                    },
+                Column(
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 16.dp)
@@ -272,7 +281,45 @@ fun VideoItemView(
                             bottom.linkTo(parent.bottom)
                             width = Dimension.fillToConstraints
                         }
-                )
+                ) {
+                    params.seller?.let { seller ->
+                        VideoSellerStrip(
+                            displayName = seller.displayName,
+                            handle = seller.handle,
+                            emoji = seller.emoji,
+                            isVerified = seller.isVerified,
+                            isLiveNow = params.isSellerLiveNow,
+                            onSellerClick = { onSellerClick.invoke(seller.id) },
+                            onLiveClick = { onWatchLiveClick.invoke(seller.id) },
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
+                    OwnerSectionView(
+                        owner = params.mediaInfo.owner.name,
+                        content = params.mediaInfo.title,
+                        tags = params.mediaInfo.tags,
+                        onOwnerClick = { owner ->
+                            // Handle navigate to owner account here
+                            println(owner)
+                        },
+                        onTagClick = { tag ->
+                            // Handle navigate to tag search here
+                            println(tag)
+                        },
+                        showOwnerName = params.seller == null
+                    )
+
+                    params.taggedProducts.firstOrNull()?.let { featured ->
+                        VideoProductPill(
+                            product = featured,
+                            totalTaggedCount = params.taggedProducts.size,
+                            onProductClick = { onProductClick.invoke(featured) },
+                            onSeeAllClick = { onSeeAllProductsClick.invoke(params.taggedProducts) },
+                            modifier = Modifier.padding(top = 10.dp)
+                        )
+                    }
+                }
             }
         }
     }
