@@ -9,6 +9,7 @@ import { InvalidPhoneError } from "./lib/phone.js";
 import type { AppBindings } from "./middleware/auth.js";
 import { accountRoutes, authRoutes } from "./routes/auth.js";
 import { listingRoutes, safetyRoutes, sellerRoutes } from "./routes/listings.js";
+import { conversationRoutes } from "./routes/messaging.js";
 
 const app = new Hono<AppBindings>();
 
@@ -28,6 +29,7 @@ app.route("/auth", authRoutes);
 app.route("/account", accountRoutes);
 app.route("/listings", listingRoutes);
 app.route("/sellers", sellerRoutes);
+app.route("/conversations", conversationRoutes);
 app.route("/", safetyRoutes);
 
 app.notFound((c) =>

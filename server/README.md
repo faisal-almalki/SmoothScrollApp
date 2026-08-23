@@ -13,8 +13,8 @@ API and database for the SmoothScroll video classifieds app.
 | 1 | Database schema + migrations | **done, verified** |
 | 2 | Auth — phone OTP + JWT | **done, verified** |
 | 3 | Listings API — CRUD, search, paging | **done, verified** |
-| 4 | Messaging API + realtime | next |
-| 5 | Media uploads — photos, video | pending |
+| 4 | Messaging API + realtime | **done, verified** |
+| 5 | Media uploads — photos, video | next |
 | 6 | Wire the Android app to the API | pending |
 | 7 | Deploy + push notifications | pending |
 
@@ -75,7 +75,10 @@ Listings      ✓ keyset paging, no gaps or repeats even mid-bump
               ✓ combined filters  ✓ phone gated on consent  ✓ ownership
               ✓ sold/relist  ✓ bump cooldown  ✓ view counting
               ✓ follower counter stays honest  ✓ blocking cuts both ways
-All checks passed  66 passed, 0 failed
+Messaging     ✓ thread reuse  ✓ unread moves for the recipient only
+              ✓ non-participants refused  ✓ consent and blocks respected
+              ✓ history survives a removed ad  ✓ live delivery, no leaks
+All checks passed  86 passed, 0 failed
 ```
 
 The auth checks drive the **same service functions the API calls**, not a copy:
@@ -154,6 +157,46 @@ were blocked by watching the ads stay visible.
 
 **Removal is a status change, not a delete.** Conversations reference the ad, and
 a buyer's inbox should not lose its subject line because a seller tidied up.
+
+---
+
+## Messaging
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /conversations` | Inbox, keyset paged. Works from either side. |
+| `POST /conversations` | `{ listingId }` — opens or reuses the thread. |
+| `GET /conversations/unread-count` | Total unread, for the badge. |
+| `GET /conversations/:id/messages` | Keyset paged, newest first. |
+| `POST /conversations/:id/messages` | Send. |
+| `POST /conversations/:id/read` | Clear your own unread count. |
+| `GET /conversations/:id/stream` | Live messages over Server-Sent Events. |
+
+**One thread per (ad, buyer)**, enforced by a unique index rather than a
+check-then-insert, so opening a conversation is idempotent even under a race.
+
+**Unread counters move in the same statement as the message**, using a `CASE` on
+which side sent it, so they cannot drift from the messages that caused them.
+Reading clears only the caller's side.
+
+**A non-participant gets the same "no longer exists" message as a missing
+thread**, so conversation ids cannot be probed to discover what exists.
+
+**Taking an ad down freezes the thread but keeps the history** — no more
+messages, but both sides can still read what was said.
+
+### Why SSE and not WebSocket
+
+The app only needs server-to-client push here; messages are sent over ordinary
+POSTs. SSE is plain HTTP, so it passes through proxies and serverless hosts that
+will not do an upgrade handshake, and both browsers and OkHttp reconnect on
+their own. A socket's duplex channel would buy nothing.
+
+> **Single-instance only.** The subscriber registry in `src/lib/events.ts` lives
+> in one process's memory: with two instances, a message sent on A will not reach
+> a listener on B. Before scaling out, swap that file's `publish`/`subscribe` for
+> Postgres `LISTEN`/`NOTIFY` or Redis pub/sub. Nothing outside it changes — which
+> is why it is isolated there.
 
 ---
 

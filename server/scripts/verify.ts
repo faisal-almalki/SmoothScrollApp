@@ -31,6 +31,15 @@ import {
   unfollowSeller,
   updateListing,
 } from "../src/services/listings.js";
+import { listenerCount, subscribe } from "../src/lib/events.js";
+import {
+  listConversations,
+  listMessages,
+  markConversationRead,
+  openConversation,
+  sendMessage,
+  totalUnread,
+} from "../src/services/messaging.js";
 
 /**
  * Runs the generated migration against a real Postgres engine (PGlite is
@@ -675,6 +684,239 @@ expect(
   "report: filed once, repeating is not an error",
   firstReport.alreadyReported === false && secondReport.alreadyReported === true,
 );
+
+/* ============================================================
+   Messaging — inbox, unread bookkeeping, and who is allowed to
+   talk to whom.
+   ============================================================ */
+console.log("\n\x1b[1mMessaging\x1b[0m");
+
+const M0 = new Date("2026-03-01T09:00:00Z");
+const mmin = (n: number) => new Date(M0.getTime() + n * 60_000);
+
+const carSeller = await verifyOtp(
+  orm, "0502220001",
+  (await requestOtp(orm, "0502220001", { now: mmin(0), exposeCode: true })).devCode!,
+  { now: mmin(1) },
+);
+const buyer = await verifyOtp(
+  orm, "0502220002",
+  (await requestOtp(orm, "0502220002", { now: mmin(2), exposeCode: true })).devCode!,
+  { now: mmin(3) },
+);
+const stranger = await verifyOtp(
+  orm, "0502220003",
+  (await requestOtp(orm, "0502220003", { now: mmin(4), exposeCode: true })).devCode!,
+  { now: mmin(5) },
+);
+
+const carAd = await createListing(
+  orm, carSeller.accountId,
+  { title: "Nissan Patrol 2020", priceHalalas: 21_000_000, category: "Cars", city: "Riyadh" },
+  { now: mmin(6) },
+);
+
+const opened = await openConversation(orm, buyer.accountId, carAd.id, { now: mmin(7) });
+const reopened = await openConversation(orm, buyer.accountId, carAd.id, { now: mmin(8) });
+expect(
+  "thread: opening twice reuses the same one",
+  opened.created && !reopened.created && opened.id === reopened.id,
+);
+
+try {
+  await openConversation(orm, carSeller.accountId, carAd.id, { now: mmin(9) });
+  bad("thread: a seller cannot message their own ad");
+} catch (e) {
+  ok("thread: a seller cannot message their own ad", (e as Error).message);
+}
+
+// Unread moves for the recipient only.
+await sendMessage(orm, opened.id, buyer.accountId, "Is it still available?", { now: mmin(10) });
+expect(
+  "unread: the recipient gains one, the sender does not",
+  (await totalUnread(orm, carSeller.accountId)) === 1 &&
+    (await totalUnread(orm, buyer.accountId)) === 0,
+);
+
+await sendMessage(orm, opened.id, carSeller.accountId, "Yes, still available.", { now: mmin(11) });
+await sendMessage(orm, opened.id, carSeller.accountId, "Free to view tomorrow.", { now: mmin(12) });
+expect(
+  "unread: counts accumulate per side",
+  (await totalUnread(orm, buyer.accountId)) === 2 &&
+    (await totalUnread(orm, carSeller.accountId)) === 1,
+);
+
+// Reading clears only the caller's side.
+await markConversationRead(orm, opened.id, buyer.accountId, { now: mmin(13) });
+expect(
+  "read: clears the caller only",
+  (await totalUnread(orm, buyer.accountId)) === 0 &&
+    (await totalUnread(orm, carSeller.accountId)) === 1,
+);
+
+// Both sides see the same thread, each with their own view of it.
+const buyerInbox = await listConversations(orm, buyer.accountId);
+const sellerInbox = await listConversations(orm, carSeller.accountId);
+const buyerRow = buyerInbox.items.find((r: { id: string }) => r.id === opened.id);
+const sellerRow = sellerInbox.items.find((r: { id: string }) => r.id === opened.id);
+expect(
+  "inbox: one thread, two perspectives",
+  buyerRow?.otherId === carSeller.accountId &&
+    sellerRow?.otherId === buyer.accountId &&
+    buyerRow?.iAmSeller === false &&
+    sellerRow?.iAmSeller === true,
+);
+expect(
+  "inbox: carries the ad and the last message",
+  buyerRow?.listingTitle === "Nissan Patrol 2020" &&
+    buyerRow?.lastMessagePreview === "Free to view tomorrow.",
+  buyerRow?.lastMessagePreview,
+);
+expect(
+  "inbox: each side sees its own unread count",
+  buyerRow?.unread === 0 && sellerRow?.unread === 1,
+);
+
+// A third party is refused on both read and write.
+try {
+  await listMessages(orm, opened.id, stranger.accountId);
+  bad("access: a non-participant cannot read");
+} catch (e) {
+  ok("access: a non-participant cannot read", (e as Error).message);
+}
+try {
+  await sendMessage(orm, opened.id, stranger.accountId, "hello", { now: mmin(14) });
+  bad("access: a non-participant cannot send");
+} catch (e) {
+  ok("access: a non-participant cannot send", (e as Error).message);
+}
+
+// Paging over a long thread.
+for (let i = 0; i < 25; i++) {
+  await sendMessage(orm, opened.id, buyer.accountId, `follow up ${i}`, { now: mmin(20 + i) });
+}
+const collected: string[] = [];
+let mcursor: string | null = null;
+let mpages = 0;
+do {
+  const page = await listMessages(orm, opened.id, buyer.accountId, {
+    limit: 10,
+    ...(mcursor ? { cursor: mcursor } : {}),
+  });
+  collected.push(...page.items.map((m: { id: string }) => m.id));
+  mcursor = page.nextCursor;
+  mpages++;
+} while (mcursor && mpages < 20);
+expect(
+  "messages: paging returns every one exactly once",
+  new Set(collected).size === collected.length && collected.length === 28,
+  `${mpages} pages, ${collected.length} messages`,
+);
+
+// A seller who turned messages off cannot be reached.
+const quietSeller = await verifyOtp(
+  orm, "0502220004",
+  (await requestOtp(orm, "0502220004", { now: mmin(50), exposeCode: true })).devCode!,
+  { now: mmin(51) },
+);
+const quietAd = await createListing(
+  orm, quietSeller.accountId,
+  { title: "Quiet seller sofa", priceHalalas: 90_000, category: "Furniture", city: "Jeddah" },
+  { now: mmin(52) },
+);
+await orm
+  .update(schema.accounts)
+  .set({ allowMessages: false })
+  .where(eq(schema.accounts.id, quietSeller.accountId));
+try {
+  await openConversation(orm, buyer.accountId, quietAd.id, { now: mmin(53) });
+  bad("consent: messages off means unreachable");
+} catch (e) {
+  ok("consent: messages off means unreachable", (e as Error).message);
+}
+
+// Blocking closes both opening a thread and sending in an existing one.
+const blockedAd = await createListing(
+  orm, carSeller.accountId,
+  { title: "Second car for sale", priceHalalas: 5_000_000, category: "Cars", city: "Riyadh" },
+  { now: mmin(60) },
+);
+await blockAccount(orm, carSeller.accountId, stranger.accountId);
+try {
+  await openConversation(orm, stranger.accountId, blockedAd.id, { now: mmin(61) });
+  bad("block: cannot open a thread with someone who blocked you");
+} catch (e) {
+  ok("block: cannot open a thread with someone who blocked you", (e as Error).message);
+}
+
+await blockAccount(orm, carSeller.accountId, buyer.accountId);
+try {
+  await sendMessage(orm, opened.id, buyer.accountId, "hello again", { now: mmin(62) });
+  bad("block: cannot send inside an existing thread");
+} catch (e) {
+  ok("block: cannot send inside an existing thread", (e as Error).message);
+}
+await unblockAccount(orm, carSeller.accountId, buyer.accountId);
+
+// Taking the ad down closes the thread to new messages but keeps the history.
+await removeListing(orm, blockedAd.id, carSeller.accountId);
+const removedThread = await openConversation(orm, buyer.accountId, carAd.id, { now: mmin(70) });
+await removeListing(orm, carAd.id, carSeller.accountId);
+try {
+  await sendMessage(orm, removedThread.id, buyer.accountId, "still there?", { now: mmin(71) });
+  bad("removed ad: the thread stops accepting messages");
+} catch (e) {
+  ok("removed ad: the thread stops accepting messages", (e as Error).message);
+}
+const historyStillThere = await listMessages(orm, removedThread.id, buyer.accountId, { limit: 5 });
+expect(
+  "removed ad: the history survives",
+  historyStillThere.items.length > 0,
+  `${historyStillThere.items.length} messages still readable`,
+);
+
+// The realtime registry must actually deliver, so this runs on a live thread
+// rather than one whose ad was taken down above.
+const liveSeller = await verifyOtp(
+  orm, "0502220005",
+  (await requestOtp(orm, "0502220005", { now: mmin(90), exposeCode: true })).devCode!,
+  { now: mmin(91) },
+);
+const liveAd = await createListing(
+  orm, liveSeller.accountId,
+  { title: "Live stream fixture bicycle", priceHalalas: 70_000, category: "Other", city: "Riyadh" },
+  { now: mmin(92) },
+);
+const liveThread = await openConversation(orm, buyer.accountId, liveAd.id, { now: mmin(93) });
+
+const received: string[] = [];
+const stop = subscribe(liveThread.id, (event) => received.push(event.body));
+expect("stream: a listener is registered", listenerCount(liveThread.id) === 1);
+
+await sendMessage(orm, liveThread.id, liveSeller.accountId, "live ping", { now: mmin(94) });
+expect(
+  "stream: the message reaches the listener",
+  received.length === 1 && received[0] === "live ping",
+  `${received.length} event(s) delivered`,
+);
+
+// A listener on another thread must not receive it.
+const otherReceived: string[] = [];
+const stopOther = subscribe(opened.id, (event) => otherReceived.push(event.body));
+await sendMessage(orm, liveThread.id, buyer.accountId, "second ping", { now: mmin(95) });
+expect(
+  "stream: events do not leak across threads",
+  received.length === 2 && otherReceived.length === 0,
+);
+stopOther();
+
+stop();
+await sendMessage(orm, liveThread.id, liveSeller.accountId, "after unsubscribe", { now: mmin(96) });
+expect(
+  "stream: unsubscribing stops delivery and frees the slot",
+  listenerCount(liveThread.id) === 0 && received.length === 2,
+);
+
 
 
 
