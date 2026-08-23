@@ -7,22 +7,20 @@ import android.os.Looper
 import androidx.media3.common.Player
 import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.cronet.CronetDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.RenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.BandwidthMeter
 import androidx.media3.exoplayer.util.EventLogger
+import com.densitech.scrollsmooth.ui.media.MediaHttpDataSource
 import com.densitech.scrollsmooth.ui.utils.CustomAnalyticsListener
 import com.google.common.collect.BiMap
 import com.google.common.collect.HashBiMap
 import com.google.common.collect.Maps
-import org.chromium.net.CronetEngine
 import java.util.Collections
 import java.util.LinkedList
 import java.util.Queue
-import java.util.concurrent.Executors
 
 @SuppressLint("UnsafeOptInUsageError")
 class PlayerPool(
@@ -127,12 +125,7 @@ class PlayerPool(
             val cache = CacheSingleton.getInstance(context)
             val cacheSink = CacheDataSink.Factory().setCache(cache)
 
-            // Cronet
-            val cronetEngine = CronetEngine.Builder(context).build()
-            val cronetDataSourceFactory = CronetDataSource.Factory(
-                cronetEngine,
-                Executors.newSingleThreadExecutor()
-            )
+            val cronetDataSourceFactory = MediaHttpDataSource.factory(context)
 
             val cacheDataSourceFactory = CacheDataSource.Factory()
                 .setCache(cache)

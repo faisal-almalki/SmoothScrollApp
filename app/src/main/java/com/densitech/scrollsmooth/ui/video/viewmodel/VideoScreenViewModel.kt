@@ -13,8 +13,8 @@ import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.cache.CacheDataSink
+import com.densitech.scrollsmooth.ui.media.MediaHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.cronet.CronetDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -39,8 +39,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import org.chromium.net.CronetEngine
-import java.util.concurrent.Executors
 import kotlin.math.abs
 
 @UnstableApi
@@ -135,12 +133,7 @@ class VideoScreenViewModel(private val getVideosUseCase: GetVideosUseCase = GetV
         val cache = CacheSingleton.getInstance(context)
         val cacheSink = CacheDataSink.Factory().setCache(cache)
 
-        // Cronet
-        val cronetEngine = CronetEngine.Builder(context).build()
-        val cronetDataSourceFactory = CronetDataSource.Factory(
-            cronetEngine,
-            Executors.newSingleThreadExecutor()
-        )
+        val cronetDataSourceFactory = MediaHttpDataSource.factory(context)
 
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(cache)
@@ -191,11 +184,7 @@ class VideoScreenViewModel(private val getVideosUseCase: GetVideosUseCase = GetV
     ): MediaSource? {
         if (_mediaSourceState.value == MediaSourceState.LOCAL_SOURCE) {
             val cache = DownloadVideoCache.getInstance(context)
-            val cronetEngine = CronetEngine.Builder(context).build()
-            val cronetDataSourceFactory = CronetDataSource.Factory(
-                cronetEngine,
-                Executors.newSingleThreadExecutor()
-            )
+            val cronetDataSourceFactory = MediaHttpDataSource.factory(context)
 
             val cacheDataSourceFactory: DataSource.Factory =
                 CacheDataSource.Factory()
