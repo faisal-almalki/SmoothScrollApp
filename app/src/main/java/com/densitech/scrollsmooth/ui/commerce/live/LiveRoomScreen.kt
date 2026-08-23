@@ -127,6 +127,12 @@ fun LiveRoomScreen(
     val roomListings = liveViewModel.listingsInRoom()
     val callableSeller = seller?.takeIf { it.hasPublicPhone }
 
+    // Typed explicitly so the lambda is inferred as () -> Unit rather than () -> Boolean,
+    // which is what dialSeller actually returns.
+    val onCallSeller: (() -> Unit)? = callableSeller?.let { callable ->
+        { dialSeller(context, callable.phoneNumber) }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -193,9 +199,7 @@ fun LiveRoomScreen(
                 PinnedListingCard(
                     listing = listing,
                     onViewClick = { liveViewModel.openListing(listing) },
-                    onCallClick = callableSeller?.let { callable ->
-                        { dialSeller(context, callable.phoneNumber) }
-                    },
+                    onCallClick = onCallSeller,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 )
             }
