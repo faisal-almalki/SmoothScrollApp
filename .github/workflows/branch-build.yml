@@ -26,6 +26,19 @@ jobs:
       - name: Assemble debug
         run: ./gradlew assembleDebug --stacktrace
 
+      # So the branch can be tried on a real phone without a build environment:
+      # download the artifact from this run's page and install it. Debug builds
+      # are signed with Android's shared debug key, which is fine for testing and
+      # is exactly why this needs none of the release secrets.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: smoothscroll-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
   server:
     runs-on: ubuntu-latest
     defaults:
