@@ -52,6 +52,21 @@ import {
   sendMessage,
   totalUnread,
 } from "../src/services/messaging.js";
+import {
+  maintenanceBacklog,
+  purgeDeadSessions,
+  purgeDeletedAccounts,
+  purgeExpiredOtpCodes,
+  runMaintenance,
+} from "../src/services/maintenance.js";
+import {
+  clearPushTokensForAccount,
+  dispatchMessagePush,
+  listPushTokens,
+  registerPushToken,
+  unregisterPushToken,
+} from "../src/services/push.js";
+import { isPushConfigured } from "../src/lib/push.js";
 
 /**
  * Runs the generated migration against a real Postgres engine (PGlite is
@@ -1198,6 +1213,249 @@ expect(
 
 
 
+
+
+/* ============================================================
+   Push registration — the device side of notifications.
+   ============================================================ */
+console.log("\n\x1b[1mPush\x1b[0m");
+
+const P0 = new Date("2026-06-01T09:00:00Z");
+const pmin = (n: number) => new Date(P0.getTime() + n * 60_000);
+
+async function makeAccount(phone: string, at: Date) {
+  const req = await requestOtp(orm, phone, { now: at, exposeCode: true });
+  return verifyOtp(orm, phone, req.devCode!, { now: new Date(at.getTime() + 30_000) });
+}
+
+const pusher = await makeAccount("0561110001", pmin(0));
+const pushee = await makeAccount("0561110002", pmin(2));
+
+await registerPushToken(orm, pusher.accountId, "device-token-aaaaaaaaaa", "android", {
+  now: pmin(3),
+});
+expect(
+  "push: a device registers",
+  (await listPushTokens(orm, pusher.accountId)).length === 1,
+);
+
+// The app re-registers on every launch; that must not accumulate rows.
+await registerPushToken(orm, pusher.accountId, "device-token-aaaaaaaaaa", "android", {
+  now: pmin(4),
+});
+expect(
+  "push: re-registering the same device does not duplicate it",
+  (await listPushTokens(orm, pusher.accountId)).length === 1,
+);
+
+// Two people, one phone. The token must follow the account that owns it now,
+// or the second person receives the first person's notifications.
+await registerPushToken(orm, pushee.accountId, "device-token-aaaaaaaaaa", "android", {
+  now: pmin(5),
+});
+expect(
+  "push: a shared device moves to whoever signed in last",
+  (await listPushTokens(orm, pusher.accountId)).length === 0 &&
+    (await listPushTokens(orm, pushee.accountId)).length === 1,
+);
+
+const notMine = await unregisterPushToken(orm, pusher.accountId, "device-token-aaaaaaaaaa");
+expect(
+  "push: you cannot unregister someone else's device",
+  notMine.removed === 0 && (await listPushTokens(orm, pushee.accountId)).length === 1,
+);
+
+try {
+  await registerPushToken(orm, pushee.accountId, "device-token-bbbbbbbbbb", "windows-phone", {
+    now: pmin(6),
+  });
+  bad("push: an unknown platform is rejected");
+} catch (e) {
+  ok("push: an unknown platform is rejected", (e as Error).message);
+}
+
+try {
+  await registerPushToken(orm, pushee.accountId, "   ", "android", { now: pmin(6) });
+  bad("push: an empty token is rejected");
+} catch (e) {
+  ok("push: an empty token is rejected", (e as Error).message);
+}
+
+// The whole point of the configuration check: with no FCM credentials the send
+// path is inert rather than broken. That is the state of CI and of every
+// developer machine, so it is the state that has to be proven safe.
+expect("push: no credentials configured in the verifier", !isPushConfigured());
+
+const pushAd = await createListing(
+  orm, pushee.accountId,
+  { title: "Prayer rug", priceHalalas: 12_000, category: "Home", city: "Riyadh" },
+  { now: pmin(7) },
+);
+const pushThread = await openConversation(orm, pusher.accountId, pushAd.id, { now: pmin(8) });
+
+const dispatched = await dispatchMessagePush(orm, {
+  conversationId: pushThread.id,
+  senderId: pusher.accountId,
+  messageId: "00000000-0000-0000-0000-000000000000",
+  body: "Still available?",
+});
+expect(
+  "push: with no credentials the send is a clean skip, not an error",
+  dispatched.skipped && dispatched.sent === 0,
+);
+
+// And the same through the real send path, which fires it and does not wait.
+const pushedMessage = await sendMessage(orm, pushThread.id, pusher.accountId, "Still available?", {
+  now: pmin(9),
+});
+expect(
+  "push: sending a message still succeeds with push disabled",
+  pushedMessage.body === "Still available?",
+);
+
+await registerPushToken(orm, pushee.accountId, "device-token-cccccccccc", "ios", {
+  now: pmin(10),
+});
+await requestAccountDeletion(orm, pushee.accountId, pmin(11));
+expect(
+  "push: asking to be deleted silences every device immediately",
+  (await listPushTokens(orm, pushee.accountId)).length === 0,
+  "without waiting for the grace period",
+);
+
+const cleared = await clearPushTokensForAccount(orm, pusher.accountId);
+expect("push: clearing an account with no devices is not an error", cleared.removed === 0);
+
+/* ============================================================
+   Housekeeping — the scheduled sweep. Time is passed in, so a
+   thirty-day grace period is tested in milliseconds.
+   ============================================================ */
+console.log("\n\x1b[1mHousekeeping\x1b[0m");
+
+const H0 = new Date("2026-07-01T03:00:00Z");
+const days = (n: number) => new Date(H0.getTime() + n * 86_400_000);
+
+const doomed = await makeAccount("0562220001", H0);
+const reprieved = await makeAccount("0562220002", new Date(H0.getTime() + 60_000));
+const untouched = await makeAccount("0562220003", new Date(H0.getTime() + 120_000));
+
+const doomedAd = await createListing(
+  orm, doomed.accountId,
+  { title: "Old bicycle", priceHalalas: 30_000, category: "Sports", city: "Jeddah" },
+  { now: days(0) },
+);
+await registerPushToken(orm, doomed.accountId, "doomed-device-token-1", "android", {
+  now: days(0),
+});
+
+await requestAccountDeletion(orm, doomed.accountId, days(0));
+// Asked 29 days later, so it is still inside its grace period at day 31.
+await requestAccountDeletion(orm, reprieved.accountId, days(29));
+
+// Earlier sections delete accounts of their own, so the interesting property is
+// not the absolute count — it is that the number a monitor would report is
+// exactly the number the sweep then removes.
+const backlogBefore = await maintenanceBacklog(orm, { now: days(31) });
+const purgedAccounts = await purgeDeletedAccounts(orm, { now: days(31) });
+expect(
+  "housekeeping: the backlog predicts exactly what the sweep removes",
+  purgedAccounts === backlogBefore.accounts && purgedAccounts > 0,
+  `${backlogBefore.accounts} due, ${purgedAccounts} removed`,
+);
+
+const doomedGone = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM accounts WHERE id = $1`,
+  [doomed.accountId],
+);
+expect(
+  "housekeeping: the account past its grace period is hard-deleted",
+  doomedGone.rows[0]!.count === 0,
+);
+
+const stillThere = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM accounts WHERE id IN ($1, $2)`,
+  [reprieved.accountId, untouched.accountId],
+);
+expect(
+  "housekeeping: an account still inside its grace period survives",
+  stillThere.rows[0]!.count === 2,
+);
+
+// The grace period is the last point at which anything is recoverable. Past it
+// the cascade has to be total, or a deleted person's ads outlive them.
+const leftovers = await db.query<{ listings: number; tokens: number; sessions: number }>(
+  `SELECT (SELECT count(*) FROM listings WHERE id = $1)::int            AS listings,
+          (SELECT count(*) FROM push_tokens WHERE account_id = $2)::int AS tokens,
+          (SELECT count(*) FROM sessions WHERE account_id = $2)::int    AS sessions`,
+  [doomedAd.id, doomed.accountId],
+);
+expect(
+  "housekeeping: purging an account takes its ads, devices and sessions with it",
+  leftovers.rows[0]!.listings === 0 &&
+    leftovers.rows[0]!.tokens === 0 &&
+    leftovers.rows[0]!.sessions === 0,
+);
+
+// A live code and expired ones, to prove the sweep can tell them apart.
+await requestOtp(orm, "0563330001", { now: days(31), exposeCode: true });
+const liveCodes = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM otp_codes WHERE expires_at > $1`,
+  [days(31)],
+);
+const deletedCodes = await purgeExpiredOtpCodes(orm, { now: days(31) });
+const survivingCodes = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM otp_codes`,
+);
+expect(
+  "housekeeping: expired login codes go and unexpired ones stay",
+  deletedCodes > 0 && survivingCodes.rows[0]!.count === liveCodes.rows[0]!.count,
+  `${deletedCodes} deleted, ${survivingCodes.rows[0]!.count} still live`,
+);
+
+// A session revoked moments ago is kept on purpose: a refresh token presented
+// after rotation is how token theft shows up, and that needs the row.
+const fresh = await makeAccount("0564440001", days(31));
+await logout(orm, fresh.refreshToken, days(31));
+const otherDead = await purgeDeadSessions(orm, { now: days(32) });
+const revokedStill = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM sessions WHERE account_id = $1`,
+  [fresh.accountId],
+);
+expect(
+  "housekeeping: a just-revoked session is kept as evidence",
+  revokedStill.rows[0]!.count === 1,
+  `${otherDead} other dead session(s) swept`,
+);
+
+await purgeDeadSessions(orm, { now: days(45) });
+const revokedGone = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM sessions WHERE account_id = $1`,
+  [fresh.accountId],
+);
+expect(
+  "housekeeping: past the evidence window it is swept",
+  revokedGone.rows[0]!.count === 0,
+);
+
+// Idempotence, which is what lets a scheduler retry on a timeout without
+// worrying about what a duplicate run would do: two runs at the same instant,
+// and the second must find nothing left.
+const firstRun = await runMaintenance(orm, { now: days(45) });
+const secondRun = await runMaintenance(orm, { now: days(45) });
+expect(
+  "housekeeping: a second run at the same instant removes nothing",
+  secondRun.accountsPurged === 0 &&
+    secondRun.otpCodesDeleted === 0 &&
+    secondRun.sessionsDeleted === 0,
+  `first run removed ${firstRun.accountsPurged} account(s), ` +
+    `${firstRun.otpCodesDeleted} code(s), ${firstRun.sessionsDeleted} session(s)`,
+);
+
+const backlogAfter = await maintenanceBacklog(orm, { now: days(45) });
+expect(
+  "housekeeping: the backlog is empty once the sweep has run",
+  backlogAfter.accounts === 0 && backlogAfter.otpCodes === 0 && backlogAfter.sessions === 0,
+);
 
 
 console.log(

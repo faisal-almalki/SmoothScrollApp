@@ -59,33 +59,57 @@ live rooms and the browse tab share one set of listings and one inbox.
 
 Bottom navigation is Home · Browse · Post · Live · Account.
 
+### The backend
+
+`server/` is a real API: TypeScript, Hono, Drizzle, Postgres on Neon. Phone-code sign-in,
+listings, messaging with live delivery over SSE, presigned media uploads, push notifications
+and a nightly housekeeping sweep. `server/README.md` walks through it from an empty Neon
+project to a deployed API in about twenty minutes.
+
+The app talks to it through `CommerceSync`, which keeps the repositories synchronous: it pulls
+in the background and pushes into the same StateFlows the screens already collect. That is also
+where the offline behaviour comes from — with no server reachable, the seeded catalogue stays on
+screen and everything still renders.
+
+Point a debug build at a local server with `API_BASE_URL` in `app/build.gradle.kts`. It defaults
+to `http://10.0.2.2:8787`, which is how the emulator addresses your laptop.
+
 ### What is real and what is not
 
-There is no backend behind this build, so:
+With a server running: sign-in, listings, browse and search, conversations, live message
+delivery, photo and video upload, and push notifications are all real. Without one, the app
+falls back to seeded local data and everything below applies.
 
-- The catalogue is seeded in `CommerceCatalog`; ads you post are layered on top of it and enter the
-  feed's tag pool, so your own ads show up on feed videos.
-- Listings, conversations, follows, your profile and your contact preferences persist across
-  launches via `SharedPreferences` (`CommerceStore`), not a server. Your phone number never leaves
-  the device.
-- **Messages are not delivered anywhere.** Threads are local. The first message in a thread gets one
-  automatic acknowledgement so the inbox is not dead while you try it; it is labelled as a demo
-  reply, not a seller pretending to answer.
-- Calling is real: the app builds an `ACTION_DIAL` intent and hands it to the system dialler.
+- The fallback catalogue is seeded in `CommerceCatalog`; ads you post are layered on top of it and
+  enter the feed's tag pool, so your own ads show up on feed videos.
+- Offline, listings, conversations, follows, your profile and your contact preferences persist
+  across launches via `SharedPreferences` (`CommerceStore`) and never leave the device.
+- Calling is real either way: the app builds an `ACTION_DIAL` intent and hands it to the system
+  dialler. The number is one the seller typed in and chose to publish — there is no masking and
+  no proxy number.
+- **No SMS provider is wired up.** Outside production the server returns the sign-in code in the
+  response and the login screen shows it, so the flow is testable today.
+- **Video is uploaded but not transcoded.** The transcoder seam is explicit and currently a no-op,
+  so an uploaded video stays `PROCESSING` and does not reach the feed until a provider is wired in.
 - Live rooms play a looping video source. The viewer count and chat are simulated in
   `LiveRepository`; there is no ingest or WebRTC.
-- Videos you create are not uploaded, so a video you tag ads on is saved against a local id rather
-  than published to the feed.
-- Ads have no photographs. Each renders as a gradient derived from its id plus an emoji, so grids
-  stay stable and work offline.
+- Ads with no photographs render as a gradient derived from the id plus an emoji, so grids stay
+  stable and work offline.
 - Prices are shown in SAR and the seeded cities are Saudi. The UI is English; it is not localised
   to Arabic or RTL yet.
 
 ## Building
 
 `./gradlew assembleDebug` builds without signing secrets. `.github/workflows/branch-build.yml` runs
-that on every push to a `claude/**` branch; the release workflow builds signed APKs on
-`feat/video-creation-phase2`.
+that on every push to a `claude/**` branch, alongside a job that typechecks the server and runs its
+131 schema and behaviour checks against an in-process Postgres. The release workflow builds signed
+APKs on `feat/video-creation-phase2`.
+
+Push notifications need a Firebase project. There is deliberately no `google-services.json` in this
+repository — it is per-project configuration belonging to whoever ships the app, and a committed
+placeholder would produce an APK that looks configured and is not. Without it the app builds and
+runs normally; notifications simply do not arrive. `server/README.md` has the two lines that turn
+it on.
 
 # Video Demo
 

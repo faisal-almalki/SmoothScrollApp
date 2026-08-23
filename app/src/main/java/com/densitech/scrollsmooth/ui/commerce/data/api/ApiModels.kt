@@ -221,3 +221,20 @@ data class ContactPreferencesBody(
     val allowCalls: Boolean,
     val allowMessages: Boolean,
 )
+
+@Serializable
+data class PushTokenBody(
+    val token: String,
+    val platform: String = "android",
+)
+
+/**
+ * `deliveryEnabled` is false when the server itself has no FCM credentials, so
+ * the app can say notifications are off rather than waiting for something that
+ * is never coming.
+ */
+@Serializable
+data class PushRegistrationDto(
+    val registered: Boolean = true,
+    val deliveryEnabled: Boolean = false,
+)

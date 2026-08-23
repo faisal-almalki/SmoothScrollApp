@@ -4,6 +4,7 @@ import { accounts, conversations, listings, messages } from "../db/schema.js";
 import { publish } from "../lib/events.js";
 import { ApiError } from "../lib/http.js";
 import { isBlockedEitherWay } from "./listings.js";
+import { dispatchMessagePush } from "./push.js";
 
 /**
  * Threads between a buyer and a seller about one ad.
@@ -250,6 +251,19 @@ export async function sendMessage(
     body: saved.body,
     sentAt: saved.sentAt.toISOString(),
   });
+
+  // Not awaited: FCM is a third party over the network, and the sender should
+  // not wait on it — the message is already committed and already delivered to
+  // anyone with the thread open. dispatchMessagePush returns immediately when
+  // push is unconfigured, so this costs nothing in development or in the
+  // verifier. The catch is mandatory; an unhandled rejection here would take
+  // the process down.
+  void dispatchMessagePush(db, {
+    conversationId,
+    senderId,
+    messageId: saved.id,
+    body: saved.body,
+  }).catch((error) => console.error("[push] dispatch failed", error));
 
   return saved;
 }

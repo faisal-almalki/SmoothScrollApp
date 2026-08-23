@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">ScrollSmooth</string>
+
+    <!-- Notification channel, shown to the user in system settings. -->
+    <string name="notification_channel_messages">Messages</string>
+    <string name="notification_channel_messages_description">Replies from buyers and sellers about your ads.</string>
+    <string name="notification_new_message">New message</string>
 </resources>

@@ -1,0 +1,70 @@
+# Fly.io deployment for the SmoothScroll API.
+#
+# Why a container host rather than edge functions: this server holds Server-Sent
+# Events connections open for as long as someone has a chat thread on screen,
+# and Vercel/Cloudflare-style function platforms bill and time out per
+# invocation. A long-lived process is the shape this needs.
+#
+#   fly launch --no-deploy --copy-config    (once, to claim the app name)
+#   fly secrets set DATABASE_URL="..." JWT_SECRET="..."
+#   fly deploy
+#
+# Rename the app before the first deploy — the name is global to Fly.
+
+app = "smoothscroll-api"
+
+# Frankfurt is the closest low-latency region Fly offers to Saudi Arabia.
+# Put the Neon project in the matching region (AWS eu-central-1): the API talks
+# to the database on nearly every request, so the hop between them is the one
+# that matters, not the hop from the phone.
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Runs once per deploy, before any new container takes traffic. A failed
+# migration fails the deploy instead of releasing a server the schema does not fit.
+[deploy]
+  release_command = "node dist/scripts/migrate.js"
+
+[env]
+  PORT = "8787"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+
+  # Both false on purpose. The SSE subscriber registry lives in one process's
+  # memory (see src/lib/events.ts), so a second machine would silently fail to
+  # deliver messages to listeners connected to the first, and a machine stopped
+  # for idleness drops every open chat stream it was holding.
+  #
+  # Before scaling past one machine, move that registry to Postgres
+  # LISTEN/NOTIFY or Redis — then raise min_machines_running and turn
+  # auto_stop_machines back on.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    # Held-open SSE streams count as connections, so this is deliberately high:
+    # a few hundred people with a chat open is a few hundred connections doing
+    # nothing, not a few hundred requests being served.
+    hard_limit = 800
+    soft_limit = 600
+
+  # Liveness only, so a brief Neon hiccup does not get the process killed and
+  # restarted when it would have recovered by itself. /ready is the one that
+  # checks the database, for when you want to know before shifting traffic.
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

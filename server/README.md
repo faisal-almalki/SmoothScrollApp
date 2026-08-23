@@ -15,34 +15,109 @@ API and database for the SmoothScroll video classifieds app.
 | 3 | Listings API — CRUD, search, paging | **done, verified** |
 | 4 | Messaging API + realtime | **done, verified** |
 | 5 | Media uploads — photos, video | **done, verified** |
-| 6 | Wire the Android app to the API | next |
-| 7 | Deploy + push notifications | pending |
+| 6 | Wire the Android app to the API | **done, verified** |
+| 7 | Deploy, push notifications, housekeeping | **done, verified** |
 
 ---
 
-## Getting the database running
+## From nothing to a working app
 
-You need a Neon project. It is free to start and takes about a minute.
+Everything below is required except where marked. Roughly twenty minutes.
 
-1. Sign up at **[console.neon.tech](https://console.neon.tech)** and create a project.
-2. Open **Connection Details** and copy the **pooled** connection string. It looks like:
-   ```
-   postgres://user:pass@ep-something-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
-   ```
-3. From this directory:
-   ```bash
-   cp .env.example .env      # then paste your string into DATABASE_URL
-   npm install
-   npm run db:migrate
-   ```
+### 1. A database
 
-That creates all 16 tables, 43 indexes and every constraint.
+```bash
+cd server
+cp .env.example .env
+```
 
-> Use the **pooled** string (the host contains `-pooler`), not the direct one.
-> Serverless functions open and close connections constantly; the pooler is what
-> stops Neon running out of them.
+Sign up at **[console.neon.tech](https://console.neon.tech)**, create a project,
+open **Connection Details** and copy the **pooled** string — the host contains
+`-pooler`. Paste it into `DATABASE_URL` in `.env`, then generate a signing key:
 
----
+```bash
+echo "JWT_SECRET=\"$(openssl rand -base64 32)\"" >> .env
+npm install
+npm run db:migrate      # 16 tables, 43 indexes, every constraint
+```
+
+> Use the **pooled** string, not the direct one. Connections here are opened and
+> closed constantly; the pooler is what stops Neon running out of them.
+
+Check it before going further — this needs no database and no network:
+
+```bash
+npm run db:verify       # 131 checks
+```
+
+### 2. The API, locally
+
+```bash
+npm run dev             # http://localhost:8787
+curl localhost:8787/health
+```
+
+### 3. The Android app against it
+
+Open the project root in Android Studio and run the **debug** build. It already
+points at `http://10.0.2.2:8787`, which is how the emulator addresses your
+laptop — nothing to configure.
+
+On a **physical phone** on the same Wi-Fi, use your machine's LAN address:
+
+```kotlin
+// app/build.gradle.kts, defaultConfig
+buildConfigField("String", "API_BASE_URL", "\"http://192.168.1.20:8787\"")
+```
+
+### 4. Sign in, post an ad, message a seller
+
+There is no SMS provider yet, and you do not need one. Outside production the
+server returns the code in the response and the login screen displays it.
+
+1. **Account → Sign in**, enter any Saudi mobile number (`0512345678`).
+2. The six-digit code appears on screen. Enter it. The account is created on
+   first use.
+3. **Post** — title, price, category, city, photos. It appears in Browse
+   immediately.
+4. Sign in as a second number on another emulator, open the ad, and **Message
+   the seller**. With both apps open the reply arrives live over SSE.
+5. To try calling: **Account → Contact settings**, publish a phone number, turn
+   Calls on. A Call button appears on your ads and opens the dialler with the
+   number filled in. Nothing is dialled without confirmation, and the app never
+   asks for the call permission.
+
+> The number a buyer sees is one the seller typed in and chose to publish. There
+> is no masking, no proxy number and no relay — publishing is a deliberate act,
+> and a database constraint makes "Call button with no number" impossible.
+
+### 5. Deploy it
+
+```bash
+fly launch --no-deploy --copy-config    # rename the app in fly.toml first
+fly secrets set DATABASE_URL="postgres://…" \
+                JWT_SECRET="$(openssl rand -base64 32)" \
+                MAINTENANCE_SECRET="$(openssl rand -hex 32)"
+fly deploy
+curl https://your-api.fly.dev/ready
+```
+
+Then point the release build at it:
+
+```kotlin
+// app/build.gradle.kts, buildTypes.release
+buildConfigField("String", "API_BASE_URL", "\"https://your-api.fly.dev\"")
+```
+
+### 6. Optional, in the order they start mattering
+
+| What | Why | Where |
+| --- | --- | --- |
+| **SMS provider** | Real users cannot see a `devCode`. Unifonic or Twilio. | `SmsSender`, `src/services/auth.ts` |
+| **Object storage** | Photos and video need somewhere to live. R2 is cheapest. | `S3_*` in `.env` |
+| **Push notifications** | Replies arrive when the app is closed. | *Push notifications* below |
+| **Maintenance schedule** | Deletion requests are otherwise never carried out. | *Housekeeping* below |
+| **Video transcoding** | Uploaded video stays `PROCESSING` and never reaches the feed. | `onVideoUploaded`, `src/services/media.ts` |
 
 ## Commands
 
@@ -53,6 +128,9 @@ That creates all 16 tables, 43 indexes and every constraint.
 | `npm run db:generate` | Regenerates SQL after editing `src/db/schema.ts`. |
 | `npm run typecheck` | Type-checks without emitting. |
 | `npm run dev` | Runs the API locally with reload. |
+| `npm run build` | Compiles to `dist/`. |
+| `npm start` | Runs the compiled build (`dist/src/index.js`). |
+| `npm run db:migrate:prod` | Migrations from the compiled build, for the deploy release step. |
 
 ### `db:verify` — why it exists
 
@@ -82,7 +160,18 @@ Media         ✓ presigned uploads  ✓ type and size limits  ✓ 10-photo cap
               ✓ positions contiguous after add, reorder, swap, delete
               ✓ owner-only on every mutation  ✓ UPLOADING → PROCESSING → READY
               ✓ feed hides unready video, sold ads and blocked sellers
-All checks passed  111 passed, 0 failed
+Push          ✓ re-registering a device does not duplicate it
+              ✓ a shared phone moves the token to whoever signed in last
+              ✓ you cannot unregister someone else's device
+              ✓ with no FCM credentials the send is a skip, not an error
+              ✓ deletion silences every device at once
+Housekeeping  ✓ the backlog predicts exactly what the sweep removes
+              ✓ an account inside its grace period survives
+              ✓ purging one takes its ads, devices and sessions with it
+              ✓ expired codes go, unexpired stay
+              ✓ a just-revoked session is kept as evidence
+              ✓ a second run at the same instant removes nothing
+All checks passed  131 passed, 0 failed
 ```
 
 The auth checks drive the **same service functions the API calls**, not a copy:
@@ -92,6 +181,11 @@ fast-forward the clock to test expiry.
 
 It runs in CI on every push, so a broken migration is caught before it ever
 reaches a real database.
+
+The push and housekeeping checks matter more than their line count suggests:
+both features are ones you would otherwise only find out were broken in
+production, months apart — a notification that never arrives, or a deletion that
+silently never happened.
 
 ---
 
@@ -246,6 +340,160 @@ uses — and then written to their final values. The two statements are not in a
 transaction because the Neon HTTP driver cannot hold one open; the window is
 tiny and owner-only, and a crash between them leaves every position negative,
 which a repair pass at the top of the same function corrects on the next call.
+
+---
+
+## Push notifications
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /account/push-tokens` | Register this device. Body `{ token, platform }`. |
+| `DELETE /account/push-tokens` | Unregister one device. Body `{ token }`. |
+| `DELETE /account/push-tokens/all` | Unregister every device for the account. |
+
+One notification is sent: a new message on one of your ads. It fires from the
+same place the SSE event is published, so the two cannot get out of step.
+
+**It is not awaited.** FCM is a third party over the network, and whoever sent
+the message should not wait on it — the message is already committed and already
+delivered to anyone with the thread open.
+
+**With no credentials it is inert, not broken.** `isPushConfigured()` is checked
+before any query, so on a server with no FCM service account — CI, every
+developer machine, the verifier — a send costs one boolean and touches neither
+the database nor the network. The registration endpoint still succeeds and
+returns `deliveryEnabled: false`, so the app can say notifications are off
+rather than waiting for something that is never coming.
+
+**A dead token is deleted, not retried.** FCM answers `UNREGISTERED` for an
+uninstalled app; that row is removed rather than left to waste a request on
+every future message.
+
+`firebase-admin` is not used. FCM HTTP v1 is one RS256 signature and two POSTs,
+both in `src/lib/push.ts` with `node:crypto` — the SDK is tens of megabytes and
+drags in its own gRPC stack. (The legacy server-key API is not an option: Google
+switched it off in 2024.)
+
+### Turning it on
+
+1. **[console.firebase.google.com](https://console.firebase.google.com)** →
+   create a project → add an Android app with package name
+   `com.densitech.scrollsmooth`.
+2. Download `google-services.json` into `app/`, and add the plugin — two lines:
+   ```kotlin
+   // settings.gradle.kts is already fine; in app/build.gradle.kts:
+   plugins {
+       id("com.google.gms.google-services") version "4.4.2"
+   }
+   ```
+   That file is **not** in this repository on purpose. It is per-project
+   configuration belonging to whoever ships the app, and a committed placeholder
+   would produce an APK that looks configured and is not. Without it Firebase
+   logs `Default FirebaseApp failed to initialize` once at startup, every push
+   call becomes a no-op, and the app runs normally.
+3. Project settings → Service accounts → **Generate new private key**. Give the
+   whole JSON to the server on one line:
+   ```bash
+   fly secrets set FCM_SERVICE_ACCOUNT_JSON="$(cat service-account.json | tr -d '\n')"
+   ```
+
+---
+
+## Housekeeping
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /internal/maintenance` | What a run would remove. Safe to poll. |
+| `POST /internal/maintenance` | Run the sweep. |
+
+Three jobs behind one call: hard-delete accounts whose thirty-day grace period
+has expired, delete expired login codes, delete dead sessions.
+
+It is **a route driven by an external scheduler**, not an in-process timer. A
+timer runs once per instance, so two instances run it twice — and it does not
+run at all while the process is asleep, which is exactly what a scale-to-zero
+host does at 3am. `.github/workflows/maintenance.yml` drives it nightly; any
+other scheduler works the same way, because the endpoint takes a shared secret
+rather than a platform token.
+
+```bash
+curl -X POST https://your-api.fly.dev/internal/maintenance \
+     -H "X-Maintenance-Secret: $MAINTENANCE_SECRET"
+```
+
+**An unset secret closes the endpoint rather than opening it.** Treating "no
+secret configured" as "no check needed" is how one forgotten environment
+variable becomes a public endpoint that deletes accounts.
+
+**Deletion past the grace period is total.** Every foreign key is
+`ON DELETE CASCADE`, so the account's listings, photos, messages, devices and
+sessions go in the same statement. That is the point of the grace period: up to
+it, nothing is lost; past it, nothing is kept.
+
+**A revoked session is kept for a further week.** A refresh token presented
+after rotation is how token theft announces itself, and that signal is worth
+more than the row costs.
+
+---
+
+## Deploying
+
+`Dockerfile` and `fly.toml` target **Fly.io**. Railway, Render or any container
+host works from the same Dockerfile; what does *not* work is a pure edge-function
+platform, because this server holds SSE connections open for as long as someone
+has a chat thread on screen and those platforms bill and time out per
+invocation.
+
+```bash
+fly launch --no-deploy --copy-config    # once; rename the app first
+fly secrets set DATABASE_URL="postgres://…" JWT_SECRET="$(openssl rand -base64 32)"
+fly deploy
+```
+
+`fly deploy` runs `node dist/scripts/migrate.js` as a release command before any
+new container takes traffic, so a migration that fails fails the deploy instead
+of releasing a server the schema does not fit.
+
+Two health endpoints, deliberately different:
+
+- **`/health`** does not touch the database. The platform restarts a container
+  whose health check fails, and a check that fails during a brief Neon hiccup
+  gets a process killed that would have recovered on its own.
+- **`/ready`** does, plus reports whether push is configured. Use it from a
+  deploy script that wants to know a release can actually serve.
+
+> **One machine, for now.** `auto_stop_machines` is off and
+> `min_machines_running` is 1 because the SSE registry lives in one process's
+> memory (see *Why SSE and not WebSocket*), and a machine stopped for idleness
+> drops every chat stream it was holding. Before scaling out, move that registry
+> to `LISTEN`/`NOTIFY` or Redis — then raise the count and turn auto-stop back on.
+
+Put the Neon project in the region matching `primary_region`. The API talks to
+the database on nearly every request, so the hop between them is the one worth
+optimising — not the hop from the phone.
+
+---
+
+## Logs
+
+One structured line per request: method, path, status, duration, request id, and
+the account id when the caller is signed in. JSON in production because every
+log pipeline parses JSON and none parses prose; a short human line otherwise.
+
+```json
+{"at":"2026-08-23T15:04:11.427Z","level":"info","requestId":"a1b2…","method":"POST","path":"/conversations","status":201,"durationMs":38,"accountId":"9f3c…"}
+```
+
+The request id is echoed back as `X-Request-Id` and repeated on any unhandled
+error, so a user quoting the id from their error message is enough to find the
+stack.
+
+**What is deliberately absent: the query string, the body, and the headers.**
+Those carry phone numbers, OTP codes and bearer tokens, and a log file is the
+wrong home for all three — it is copied, shipped to third parties and kept far
+longer than the data deserves. The logged path is `c.req.path`, which excludes
+the query string *by construction* rather than by a redaction pass someone will
+eventually forget to update.
 
 ---
 

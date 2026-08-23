@@ -117,4 +117,18 @@ dependencies {
     implementation(libs.coil)
     implementation(libs.permission)
     implementation(libs.okhttp)
+
+    // Push notifications.
+    //
+    // The google-services Gradle plugin is deliberately NOT applied, and there
+    // is no google-services.json in the repository: that file is per-project
+    // configuration belonging to whoever ships the app, and committing a
+    // placeholder would only produce an APK that looks configured and is not.
+    //
+    // Without it Firebase logs "Default FirebaseApp failed to initialize" once
+    // at startup and every push call becomes a no-op — the app runs normally,
+    // notifications simply do not arrive. See README for the two lines that
+    // turn it on.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 }

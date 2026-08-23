@@ -11,6 +11,7 @@ import {
 } from "../lib/env.js";
 import { ApiError } from "../lib/http.js";
 import { maskPhone, normaliseSaudiPhone } from "../lib/phone.js";
+import { clearPushTokensForAccount } from "./push.js";
 import {
   generateOtpCode,
   generateRefreshToken,
@@ -250,6 +251,9 @@ export async function requestAccountDeletion(
 ): Promise<{ deletedAt: Date; purgeAfter: Date }> {
   await db.update(accounts).set({ deletedAt: now }).where(eq(accounts.id, accountId));
   await logoutEverywhere(db, accountId, now);
+  // The row survives the grace period, but its devices must stop being notified
+  // the moment the person asks to be gone.
+  await clearPushTokensForAccount(db, accountId);
   return {
     deletedAt: now,
     purgeAfter: new Date(now.getTime() + ACCOUNT_DELETION_GRACE_DAYS * 86_400_000),

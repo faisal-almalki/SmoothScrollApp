@@ -9,6 +9,8 @@ export interface AppBindings {
   Variables: {
     db: Database;
     account: Account;
+    /** Set by requestLogger on every request, before anything else runs. */
+    requestId: string;
   };
 }
 

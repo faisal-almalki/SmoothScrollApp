@@ -10,6 +10,7 @@ import androidx.navigation.compose.rememberNavController
 import com.densitech.scrollsmooth.ui.commerce.data.CommerceStore
 import com.densitech.scrollsmooth.ui.commerce.data.CommerceSync
 import com.densitech.scrollsmooth.ui.commerce.data.api.TokenStore
+import com.densitech.scrollsmooth.ui.commerce.push.PushTokens
 import com.densitech.scrollsmooth.ui.main.MainScreen
 import com.densitech.scrollsmooth.ui.theme.ScrollSmoothTheme
 
@@ -23,6 +24,11 @@ class MainActivity : ComponentActivity() {
         CommerceStore.init(applicationContext)
         TokenStore.init(applicationContext)
         CommerceSync.refreshAll()
+
+        // Creates the notification channel and, if someone is already signed in,
+        // re-registers this device — Firebase rotates tokens on its own, so
+        // registering only at sign-in makes notifications stop months later.
+        PushTokens.start(applicationContext)
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(

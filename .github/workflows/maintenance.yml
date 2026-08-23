@@ -1,0 +1,45 @@
+name: Maintenance sweep
+
+# Hard-deletes accounts past their thirty-day grace period and clears expired
+# login codes and sessions.
+#
+# GitHub Actions is used as the scheduler because it is free, it is already here,
+# and the job is one HTTP request. Any other scheduler works identically — the
+# endpoint takes a shared secret, not a platform-specific token.
+#
+# To turn it on:
+#   Settings -> Secrets and variables -> Actions
+#     Variable  API_BASE_URL        https://your-api.fly.dev
+#     Secret    MAINTENANCE_SECRET  the same value the server has
+#
+# Until both exist the job reports that it is not configured and exits cleanly,
+# rather than failing every night in the Actions tab.
+
+on:
+  schedule:
+    # 03:10 UTC, which is 06:10 in Riyadh — after the quietest hour and not on
+    # the hour, where every other scheduled job on the platform piles up.
+    - cron: '10 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the sweep
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          MAINTENANCE_SECRET: ${{ secrets.MAINTENANCE_SECRET }}
+        run: |
+          if [ -z "$API_BASE_URL" ] || [ -z "$MAINTENANCE_SECRET" ]; then
+            echo "API_BASE_URL variable or MAINTENANCE_SECRET secret is not set."
+            echo "Nothing to do. See the comment at the top of this workflow."
+            exit 0
+          fi
+
+          # --fail-with-body so a non-2xx fails the step but still prints why.
+          curl --silent --show-error --fail-with-body \
+               --max-time 120 \
+               -X POST "$API_BASE_URL/internal/maintenance" \
+               -H "X-Maintenance-Secret: $MAINTENANCE_SECRET"
+          echo

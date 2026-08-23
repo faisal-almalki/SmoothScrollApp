@@ -41,6 +41,31 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Firebase delivers pushes here. exported="false" plus the FCM intent
+          filter is the documented registration; nothing else can start it.
+
+          There is intentionally no google-services.json in this repository, so
+          on a stock checkout Firebase logs that it could not initialise and this
+          service is simply never called. See README to switch it on.
+        -->
+        <service
+            android:name=".ui.commerce.push.PushMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Matches the channel PushNotifications creates, so a notification
+             that arrives before the app has ever run is not silent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification_message" />
+
         <service
             android:name=".ui.downloader.SmoothScrollDownloadService"
             android:exported="false"

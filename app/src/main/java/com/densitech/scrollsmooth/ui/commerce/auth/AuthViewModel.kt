@@ -6,6 +6,7 @@ import com.densitech.scrollsmooth.ui.commerce.data.CommerceSync
 import com.densitech.scrollsmooth.ui.commerce.data.api.ApiClient
 import com.densitech.scrollsmooth.ui.commerce.data.api.ApiException
 import com.densitech.scrollsmooth.ui.commerce.data.api.TokenStore
+import com.densitech.scrollsmooth.ui.commerce.push.PushTokens
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -102,6 +103,8 @@ class AuthViewModel @Inject constructor() : ViewModel() {
                 // Pull the account and its data straight away so the app does
                 // not land on an empty screen after signing in.
                 CommerceSync.refreshAll()
+                // Now there is an account to attach this device to.
+                PushTokens.register()
             } catch (api: ApiException) {
                 _error.value = api.message
             } catch (error: Exception) {
@@ -114,6 +117,10 @@ class AuthViewModel @Inject constructor() : ViewModel() {
 
     fun signOut() {
         viewModelScope.launch {
+            // Before the session is cleared, while the access token still works.
+            // Afterwards the request would be rejected and this device would go
+            // on receiving the previous user's messages.
+            PushTokens.unregister()
             runCatching { ApiClient.signOut() }
             _step.value = AuthStep.PHONE
             _phone.value = ""

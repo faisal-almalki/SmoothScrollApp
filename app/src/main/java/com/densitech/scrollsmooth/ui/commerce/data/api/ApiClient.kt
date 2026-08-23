@@ -195,6 +195,22 @@ object ApiClient {
     }
 
     /* ============================================================
+       Push notifications
+       ============================================================ */
+
+    suspend fun registerPushToken(token: String, platform: String = "android"): PushRegistrationDto =
+        post("/account/push-tokens", PushTokenBody(token, platform))
+
+    /**
+     * The token travels in the body rather than the path: FCM tokens contain
+     * characters that need escaping in a URL and are long enough that some
+     * proxies truncate the path.
+     */
+    suspend fun unregisterPushToken(token: String) {
+        deleteWithBody("/account/push-tokens", PushTokenBody(token))
+    }
+
+    /* ============================================================
        Plumbing
        ============================================================ */
 
@@ -228,6 +244,10 @@ object ApiClient {
 
     private suspend fun deleteUnit(path: String) {
         requestRaw(Request.Builder().url(baseUrl + path).delete(), true)
+    }
+
+    private suspend inline fun <reified B> deleteWithBody(path: String, body: B) {
+        requestRaw(Request.Builder().url(baseUrl + path).delete(jsonBody(body)), true)
     }
 
     // Private so the public-inline restriction does not bite: these touch `json`,

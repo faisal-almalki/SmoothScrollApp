@@ -4,6 +4,7 @@ import { parseBody } from "../lib/http.js";
 import { verifyAccessToken } from "../lib/tokens.js";
 import type { AppBindings } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
+import { requireMachineSecret } from "../middleware/machine.js";
 import {
   attachPhoto,
   confirmVideoUpload,
@@ -87,11 +88,7 @@ videoRoutes.post("/:id/confirm", requireAuth, async (c) => {
  * The transcoder's callback. Guarded by a shared secret rather than a user
  * token, because the caller is a machine with no account.
  */
-videoRoutes.post("/:id/ready", async (c) => {
-  const secret = process.env.TRANSCODER_SECRET;
-  if (!secret || c.req.header("X-Transcoder-Secret") !== secret) {
-    return c.json({ error: { code: "forbidden", message: "Not allowed." } }, 403);
-  }
+videoRoutes.post("/:id/ready", requireMachineSecret("TRANSCODER_SECRET", "X-Transcoder-Secret"), async (c) => {
   const body = await parseBody(c, readySchema);
   return c.json(await markVideoReady(c.get("db"), c.req.param("id"), body));
 });
