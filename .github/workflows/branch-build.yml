@@ -44,6 +44,13 @@ jobs:
   # the app.
   launch:
     runs-on: ubuntu-latest
+    # After `build`, not alongside it. Three Gradle jobs starting at once means
+    # three cold dependency resolutions against Maven Central at once, which is
+    # what earned a 429 and failed the run on nothing to do with the code.
+    # Running second also means the Gradle cache `build` just saved is warm, so
+    # most of this job resolves from disk — and no emulator minutes are burned
+    # when compilation has already failed.
+    needs: build
 
     steps:
       - uses: actions/checkout@v4
