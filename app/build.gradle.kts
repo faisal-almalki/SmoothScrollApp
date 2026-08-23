@@ -112,6 +112,12 @@ dependencies {
     // Exo player
     implementation(libs.bundles.media3.bundles)
 
+    // Navigation and viewModel() were both reaching this project only through
+    // hilt-navigation-compose, which was never declared for either of them.
+    // Removing Hilt took Navigation Compose with it and broke the build — so
+    // both are now direct dependencies, which is what they always were in
+    // practice.
+    implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.serialization)
