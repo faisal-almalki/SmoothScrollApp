@@ -10,36 +10,42 @@ import com.densitech.scrollsmooth.R
 sealed class Screen(val route: String, val title: String, val resourceId: Int) {
     // Bottom tabs
     data object Home : Screen("home", "Home", R.drawable.ic_home_24)
-    data object Shop : Screen("shop", "Shop", R.drawable.ic_shop_bag_24)
-    data object Add : Screen("add", "Add", R.drawable.ic_add_circle_outline_24)
+    data object Browse : Screen("browse", "Browse", R.drawable.ic_shop_bag_24)
+    data object Add : Screen("add", "Post", R.drawable.ic_add_circle_outline_24)
     data object Live : Screen("live", "Live", R.drawable.ic_live_24)
-    data object Profile : Screen("profile", "Profile", R.drawable.ic_person_24)
+    data object Profile : Screen("profile", "Account", R.drawable.ic_person_24)
 
     // Pushed screens
     data object VideoTransformation : Screen("video_transformation", "Video Transformation", 0)
-    data object Cart : Screen("cart", "Cart", 0)
-    data object Checkout : Screen("checkout", "Checkout", 0)
-    data object Orders : Screen("orders", "Orders", 0)
-    data object CreatorStudio : Screen("creator_studio", "Creator Studio", 0)
-    data object AddProduct : Screen("add_product", "List a product", 0)
+    data object Inbox : Screen("inbox", "Messages", 0)
+    data object MyListings : Screen("my_listings", "My ads", 0)
+    data object PostListing : Screen("post_listing", "Post an ad", 0)
+    data object AccountSettings : Screen("account_settings", "Contact settings", 0)
 
     data object LiveRoom : Screen("live_room/{streamId}", "Live room", 0) {
         const val ARG_STREAM_ID = "streamId"
         fun create(streamId: String) = "live_room/$streamId"
     }
 
-    data object Storefront : Screen("storefront/{sellerId}", "Storefront", 0) {
+    data object Storefront : Screen("storefront/{sellerId}", "Seller", 0) {
         const val ARG_SELLER_ID = "sellerId"
         fun create(sellerId: String) = "storefront/$sellerId"
     }
 
-    data object OrderPlaced : Screen("order_placed/{orderId}", "Order placed", 0) {
-        const val ARG_ORDER_ID = "orderId"
-        fun create(orderId: String) = "order_placed/$orderId"
+    data object Chat : Screen("chat/{conversationId}", "Conversation", 0) {
+        const val ARG_CONVERSATION_ID = "conversationId"
+
+        /**
+         * Conversation ids contain "::" and a listing id, so they are encoded before being put in
+         * a route and decoded on the way out.
+         */
+        fun create(conversationId: String) = "chat/${java.net.URLEncoder.encode(conversationId, "UTF-8")}"
+
+        fun decode(raw: String): String = java.net.URLDecoder.decode(raw, "UTF-8")
     }
 
-    data object TagProducts : Screen("tag_products/{videoId}", "Tag products", 0) {
+    data object TagListings : Screen("tag_listings/{videoId}", "Tag your ads", 0) {
         const val ARG_VIDEO_ID = "videoId"
-        fun create(videoId: String) = "tag_products/$videoId"
+        fun create(videoId: String) = "tag_listings/$videoId"
     }
 }

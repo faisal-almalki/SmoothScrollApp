@@ -53,36 +53,36 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.densitech.scrollsmooth.R
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.LiveChatKind
 import com.densitech.scrollsmooth.ui.commerce.model.LiveChatMessage
-import com.densitech.scrollsmooth.ui.commerce.model.Product
 import com.densitech.scrollsmooth.ui.commerce.model.formatCompact
 import com.densitech.scrollsmooth.ui.commerce.model.formatMoney
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
+import com.densitech.scrollsmooth.ui.commerce.view.ListingDetailSheet
+import com.densitech.scrollsmooth.ui.commerce.view.ListingImage
+import com.densitech.scrollsmooth.ui.commerce.view.ListingListSheet
 import com.densitech.scrollsmooth.ui.commerce.view.LiveBadge
-import com.densitech.scrollsmooth.ui.commerce.view.ProductDetailSheet
-import com.densitech.scrollsmooth.ui.commerce.view.ProductImage
-import com.densitech.scrollsmooth.ui.commerce.view.ProductListSheet
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
+import com.densitech.scrollsmooth.ui.commerce.view.dialSeller
 import com.densitech.scrollsmooth.ui.commerce.viewmodel.LiveViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 import com.densitech.scrollsmooth.ui.video.PlayerSurface
 import com.densitech.scrollsmooth.ui.video.SURFACE_TYPE_SURFACE_VIEW
 
 /**
- * A live selling room: the stream fills the screen, the chat runs up the left, and the products
- * sit in a pinned card the seller can push. Buying never leaves the room.
+ * A live room: the stream fills the screen, chat runs up the left, and the ad the seller is
+ * currently showing sits pinned above the composer. Contacting the seller never leaves the room.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun LiveRoomScreen(
     streamId: String,
     liveViewModel: LiveViewModel,
-    cartViewModel: CartViewModel,
+    messagesViewModel: MessagesViewModel,
     onClose: () -> Unit,
-    onOpenCart: () -> Unit,
-    onOpenCheckout: () -> Unit,
+    onOpenConversation: (String) -> Unit,
     onOpenSeller: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -91,12 +91,13 @@ fun LiveRoomScreen(
     val stream by liveViewModel.activeStream.collectAsState()
     val viewerCount by liveViewModel.viewerCount.collectAsState()
     val chat by liveViewModel.chat.collectAsState()
-    val secondsLeft by liveViewModel.secondsLeft.collectAsState()
-    val pinnedProduct by liveViewModel.pinnedProduct.collectAsState()
-    val openProduct by liveViewModel.openProduct.collectAsState()
-    val showProductList by liveViewModel.showProductList.collectAsState()
-    val soldThisSession by liveViewModel.soldThisSession.collectAsState()
-    val cart by cartViewModel.cart.collectAsState()
+    val pinnedListing by liveViewModel.pinnedListing.collectAsState()
+    val openListing by liveViewModel.openListing.collectAsState()
+    val showListingList by liveViewModel.showListingList.collectAsState()
+    val conversations by messagesViewModel.conversations.collectAsState()
+
+    val unread = conversations.count { it.hasUnread }
+    val nowMillis = remember(stream?.id) { System.currentTimeMillis() }
 
     // The room owns its player: entering starts it, leaving releases it.
     val exoPlayer = remember(streamId) {
@@ -123,16 +124,21 @@ fun LiveRoomScreen(
     }
 
     val seller = liveViewModel.seller()
-    val roomProducts = liveViewModel.productsInRoom()
+    val roomListings = liveViewModel.listingsInRoom()
+    val callableSeller = seller?.takeIf { it.hasPublicPhone }
 
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
         PlayerSurface(
             player = exoPlayer,
             surfaceType = SURFACE_TYPE_SURFACE_VIEW,
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Top and bottom scrims so the overlays stay legible over any frame.
+        // Scrims so the overlays stay legible over any frame.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -140,8 +146,8 @@ fun LiveRoomScreen(
                     Brush.verticalGradient(
                         0f to Color.Black.copy(alpha = 0.55f),
                         0.28f to Color.Transparent,
-                        0.62f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.75f),
+                        0.60f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.78f),
                     )
                 ),
         )
@@ -154,10 +160,9 @@ fun LiveRoomScreen(
         ) {
             LiveRoomHeader(
                 sellerName = seller?.displayName.orEmpty(),
-                sellerEmoji = seller?.emoji ?: "🛍",
+                sellerEmoji = seller?.emoji ?: "📦",
                 sellerHandle = seller?.handle.orEmpty(),
                 viewerCount = viewerCount,
-                soldThisSession = soldThisSession,
                 onSellerClick = { seller?.id?.let(onOpenSeller) },
                 onClose = onClose,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -180,26 +185,32 @@ fun LiveRoomScreen(
                 messages = chat,
                 modifier = Modifier
                     .fillMaxWidth(0.72f)
-                    .height(210.dp)
+                    .height(200.dp)
                     .padding(start = 12.dp),
             )
 
-            pinnedProduct?.let { product ->
-                PinnedProductCard(
-                    product = product,
-                    livePriceCents = liveViewModel.livePriceCents(product),
-                    secondsLeft = secondsLeft,
-                    isSaleRunning = liveViewModel.isFlashSaleRunning(),
-                    onBuyClick = { liveViewModel.openProduct(product) },
+            pinnedListing?.let { listing ->
+                PinnedListingCard(
+                    listing = listing,
+                    onViewClick = { liveViewModel.openListing(listing) },
+                    onCallClick = callableSeller?.let { callable ->
+                        { dialSeller(context, callable.phoneNumber) }
+                    },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 )
             }
 
             LiveRoomBottomBar(
-                productCount = roomProducts.size,
-                cartItemCount = cart.itemCount,
-                onProductsClick = liveViewModel::showProductList,
-                onCartClick = onOpenCart,
+                listingCount = roomListings.size,
+                unreadCount = unread,
+                onListingsClick = liveViewModel::showListingList,
+                onMessagesClick = {
+                    val listing = pinnedListing
+                    if (listing != null) {
+                        liveViewModel.recordContact()
+                        onOpenConversation(messagesViewModel.startConversation(listing))
+                    }
+                },
                 onSendChat = liveViewModel::sendChat,
                 modifier = Modifier
                     .padding(horizontal = 12.dp)
@@ -209,46 +220,34 @@ fun LiveRoomScreen(
         }
     }
 
-    // Buying inside the room: the live price applies while the sale clock is running.
-    openProduct?.let { product ->
-        val livePrice = liveViewModel.livePriceCents(product)
-        val saleRunning = liveViewModel.isFlashSaleRunning()
-        ProductDetailSheet(
-            product = product,
-            livePriceCents = if (saleRunning) livePrice else null,
-            liveBadge = if (saleRunning) "LIVE PRICE" else null,
-            onDismiss = liveViewModel::closeProduct,
-            onAddToCart = { selection ->
-                cartViewModel.addToCart(selection, liveStreamId = streamId)
-                liveViewModel.recordPurchase(selection.quantity)
-                liveViewModel.closeProduct()
+    openListing?.let { listing ->
+        ListingDetailSheet(
+            listing = listing,
+            nowMillis = nowMillis,
+            onDismiss = liveViewModel::closeListing,
+            onMessageSeller = { target ->
+                liveViewModel.recordContact()
+                liveViewModel.closeListing()
+                onOpenConversation(messagesViewModel.startConversation(target))
             },
-            onBuyNow = { selection ->
-                cartViewModel.addToCart(selection, liveStreamId = streamId)
-                liveViewModel.recordPurchase(selection.quantity)
-                liveViewModel.closeProduct()
-                onOpenCheckout()
-            },
+            onCalledSeller = { liveViewModel.recordContact() },
             onOpenSeller = { sellerId ->
-                liveViewModel.closeProduct()
+                liveViewModel.closeListing()
                 onOpenSeller(sellerId)
             },
         )
     }
 
-    if (showProductList) {
-        ProductListSheet(
+    if (showListingList) {
+        ListingListSheet(
             title = "In this live",
-            subtitle = if (liveViewModel.isFlashSaleRunning()) {
-                "Live prices apply while the sale clock is running"
-            } else {
-                null
-            },
-            products = roomProducts,
-            onDismiss = liveViewModel::hideProductList,
-            onProductClick = { product ->
-                liveViewModel.hideProductList()
-                liveViewModel.openProduct(product)
+            subtitle = "Ads this seller is showing right now",
+            listings = roomListings,
+            nowMillis = nowMillis,
+            onDismiss = liveViewModel::hideListingList,
+            onListingClick = { listing ->
+                liveViewModel.hideListingList()
+                liveViewModel.openListing(listing)
             },
         )
     }
@@ -260,7 +259,6 @@ private fun LiveRoomHeader(
     sellerEmoji: String,
     sellerHandle: String,
     viewerCount: Int,
-    soldThisSession: Int,
     onSellerClick: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -309,31 +307,16 @@ private fun LiveRoomHeader(
 
         Spacer(Modifier.width(8.dp))
 
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = "👁 ${viewerCount.formatCompact()}",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(CommerceColors.Scrim)
-                    .padding(horizontal = 7.dp, vertical = 3.dp),
-            )
-            if (soldThisSession > 0) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "🔥 $soldThisSession sold",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(CommerceColors.Accent)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
-        }
+        Text(
+            text = "👁 ${viewerCount.formatCompact()}",
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(CommerceColors.Scrim)
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        )
 
         Spacer(Modifier.width(6.dp))
 
@@ -355,32 +338,27 @@ private fun LiveRoomHeader(
     }
 }
 
-/**
- * The pinned product the seller is currently talking about, with the flash sale clock. This is
- * the highest intent surface in the room, so it gets the accent button.
- */
+/** The ad the seller is talking about right now. */
 @Composable
-private fun PinnedProductCard(
-    product: Product,
-    livePriceCents: Long,
-    secondsLeft: Int,
-    isSaleRunning: Boolean,
-    onBuyClick: () -> Unit,
+private fun PinnedListingCard(
+    listing: Listing,
+    onViewClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onCallClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(CommerceDimens.CardCorner))
             .background(Color.White.copy(alpha = 0.94f))
-            .clickableNoRipple { onBuyClick() }
+            .clickableNoRipple { onViewClick() }
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ProductImage(
-            seed = product.id,
-            emoji = product.emoji,
-            imageUrl = product.imageUrl,
+        ListingImage(
+            seed = listing.id,
+            emoji = listing.emoji,
+            imageUrl = listing.imageUrl,
             emojiSize = 26,
             corner = 10.dp,
             modifier = Modifier.size(56.dp),
@@ -388,7 +366,7 @@ private fun PinnedProductCard(
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = product.title,
+                text = listing.title,
                 color = Color(0xFF111114),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -396,63 +374,68 @@ private fun PinnedProductCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(3.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = livePriceCents.formatMoney(),
-                    color = CommerceColors.Accent,
+                    text = if (listing.isFree) "Free" else listing.priceCents.formatMoney(),
+                    color = CommerceColors.AccentPressed,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                if (isSaleRunning && livePriceCents < product.priceCents) {
+                if (listing.isNegotiable && !listing.isFree) {
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        text = product.priceCents.formatMoney(),
+                        text = "negotiable",
                         color = Color(0xFF7B7B85),
-                        fontSize = 11.sp,
-                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                    )
-                }
-            }
-            if (isSaleRunning) {
-                Spacer(Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_bolt_24),
-                        contentDescription = null,
-                        tint = CommerceColors.Discount,
-                        modifier = Modifier.size(12.dp),
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text(
-                        text = "Live price ends in ${formatCountdown(secondsLeft)}",
-                        color = CommerceColors.Discount,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "${listing.city} · ${listing.condition.label}",
+                color = Color(0xFF7B7B85),
+                fontSize = 10.sp,
+            )
         }
         Spacer(Modifier.width(8.dp))
+        if (onCallClick != null) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(CommerceColors.Call)
+                    .clickableNoRipple { onCallClick() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_phone_24),
+                    contentDescription = "Call seller",
+                    tint = Color.White,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
-            text = "Buy",
+            text = "View",
             color = Color.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier
                 .clip(RoundedCornerShape(CommerceDimens.PillCorner))
                 .background(CommerceColors.Accent)
-                .clickableNoRipple { onBuyClick() }
-                .padding(horizontal = 18.dp, vertical = 9.dp),
+                .clickableNoRipple { onViewClick() }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
         )
     }
 }
 
 @Composable
 private fun LiveRoomBottomBar(
-    productCount: Int,
-    cartItemCount: Int,
-    onProductsClick: () -> Unit,
-    onCartClick: () -> Unit,
+    listingCount: Int,
+    unreadCount: Int,
+    onListingsClick: () -> Unit,
+    onMessagesClick: () -> Unit,
     onSendChat: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -479,7 +462,7 @@ private fun LiveRoomBottomBar(
             Box(modifier = Modifier.weight(1f)) {
                 if (draft.isEmpty()) {
                     Text(
-                        text = "Say something…",
+                        text = "Ask in the live…",
                         color = Color.White.copy(alpha = 0.6f),
                         fontSize = 13.sp,
                     )
@@ -509,69 +492,72 @@ private fun LiveRoomBottomBar(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(CommerceColors.Accent)
-                .clickableNoRipple { onProductsClick() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_shop_bag_24),
-                contentDescription = "Products in this live",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
-            )
-            if (productCount > 0) {
-                Text(
-                    text = productCount.toString(),
-                    color = CommerceColors.Accent,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                        .padding(horizontal = 4.dp),
-                )
-            }
-        }
+        LiveRoomActionButton(
+            iconRes = R.drawable.ic_shop_bag_24,
+            description = "Ads in this live",
+            badge = if (listingCount > 0) listingCount.toString() else null,
+            badgeColor = Color.White,
+            badgeTextColor = CommerceColors.Accent,
+            container = CommerceColors.Accent,
+            onClick = onListingsClick,
+        )
 
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.14f))
-                .clickableNoRipple { onCartClick() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_cart_24),
-                contentDescription = "Cart",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
+        LiveRoomActionButton(
+            iconRes = R.drawable.ic_chat_24,
+            description = "Message the seller",
+            badge = if (unreadCount > 0) unreadCount.coerceAtMost(99).toString() else null,
+            badgeColor = CommerceColors.Alert,
+            badgeTextColor = Color.White,
+            container = Color.White.copy(alpha = 0.14f),
+            onClick = onMessagesClick,
+        )
+    }
+}
+
+@Composable
+private fun LiveRoomActionButton(
+    iconRes: Int,
+    description: String,
+    badge: String?,
+    badgeColor: Color,
+    badgeTextColor: Color,
+    container: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(container)
+            .clickableNoRipple { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(id = iconRes),
+            contentDescription = description,
+            tint = Color.White,
+            modifier = Modifier.size(20.dp),
+        )
+        if (badge != null) {
+            Text(
+                text = badge,
+                color = badgeTextColor,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .clip(CircleShape)
+                    .background(badgeColor)
+                    .padding(horizontal = 4.dp),
             )
-            if (cartItemCount > 0) {
-                Text(
-                    text = if (cartItemCount > 99) "99+" else cartItemCount.toString(),
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .clip(CircleShape)
-                        .background(CommerceColors.Accent)
-                        .padding(horizontal = 4.dp),
-                )
-            }
         }
     }
 }
 
 /**
- * Chat runs bottom aligned and auto scrolls, the way a live chat does. Purchases and joins are
- * styled differently from ordinary messages so the social proof reads at a glance.
+ * Chat runs bottom aligned and auto scrolls. Joins and "messaged the seller" lines are styled
+ * apart from ordinary messages so the activity in the room reads at a glance.
  */
 @Composable
 fun LiveChatOverlay(
@@ -600,7 +586,7 @@ fun LiveChatOverlay(
 @Composable
 private fun LiveChatRow(message: LiveChatMessage, modifier: Modifier = Modifier) {
     val background = when (message.kind) {
-        LiveChatKind.PURCHASE -> CommerceColors.Accent.copy(alpha = 0.85f)
+        LiveChatKind.CONTACT -> CommerceColors.Accent.copy(alpha = 0.85f)
         LiveChatKind.JOIN -> Color.White.copy(alpha = 0.10f)
         LiveChatKind.CHAT -> CommerceColors.Scrim
     }
@@ -623,7 +609,7 @@ private fun LiveChatRow(message: LiveChatMessage, modifier: Modifier = Modifier)
         Spacer(Modifier.width(6.dp))
         Text(
             text = when (message.kind) {
-                LiveChatKind.PURCHASE -> "🛍 ${message.text}"
+                LiveChatKind.CONTACT -> "💬 ${message.text}"
                 LiveChatKind.JOIN -> message.text
                 LiveChatKind.CHAT -> message.text
             },
@@ -633,12 +619,4 @@ private fun LiveChatRow(message: LiveChatMessage, modifier: Modifier = Modifier)
             overflow = TextOverflow.Ellipsis,
         )
     }
-}
-
-/** m:ss for the flash sale clock. Reaching zero simply ends the live price. */
-private fun formatCountdown(totalSeconds: Int): String {
-    val safe = totalSeconds.coerceAtLeast(0)
-    val minutes = safe / 60
-    val seconds = safe % 60
-    return String.format(java.util.Locale.US, "%d:%02d", minutes, seconds)
 }

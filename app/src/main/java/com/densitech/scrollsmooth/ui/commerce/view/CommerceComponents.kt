@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalLayoutApi::class)
-
 package com.densitech.scrollsmooth.ui.commerce.view
 
 import androidx.compose.foundation.background
@@ -7,8 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -21,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -34,25 +29,27 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.densitech.scrollsmooth.R
-import com.densitech.scrollsmooth.ui.commerce.model.Product
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
+import com.densitech.scrollsmooth.ui.commerce.model.ListingCondition
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
 import com.densitech.scrollsmooth.ui.commerce.model.formatCompact
 import com.densitech.scrollsmooth.ui.commerce.model.formatMoney
+import com.densitech.scrollsmooth.ui.commerce.model.formatPostedAge
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
+import java.util.Locale
 
 /**
- * Square product artwork. Falls back to a deterministic gradient plus the product emoji when the
- * listing has no photograph, which is every seeded product in this build.
+ * Square artwork for an ad. Ads in this build carry no photographs, so each one falls back to a
+ * gradient derived from its id with its emoji on top: stable per listing, and it works offline.
  */
 @Composable
-fun ProductImage(
+fun ListingImage(
     seed: String,
     emoji: String,
     modifier: Modifier = Modifier,
@@ -96,52 +93,63 @@ fun SellerAvatar(
     }
 }
 
+/** Price, plus the "negotiable" hint that decides whether a buyer bothers to make contact. */
 @Composable
-fun PriceRow(
+fun PriceTag(
     priceCents: Long,
     modifier: Modifier = Modifier,
-    compareAtPriceCents: Long? = null,
+    isNegotiable: Boolean = false,
     priceSize: Int = 16,
-    accent: Color = CommerceColors.Accent,
+    accent: Color = CommerceColors.OnSurface,
 ) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = modifier, verticalAlignment = Alignment.Bottom) {
         Text(
-            text = priceCents.formatMoney(),
+            text = if (priceCents <= 0L) "Free" else priceCents.formatMoney(),
             color = accent,
             fontSize = priceSize.sp,
             fontWeight = FontWeight.Bold,
         )
-        if (compareAtPriceCents != null && compareAtPriceCents > priceCents) {
+        if (isNegotiable && priceCents > 0L) {
             Spacer(Modifier.width(6.dp))
             Text(
-                text = compareAtPriceCents.formatMoney(),
+                text = "negotiable",
                 color = CommerceColors.OnSurfaceMuted,
-                fontSize = (priceSize - 4).sp,
-                textDecoration = TextDecoration.LineThrough,
+                fontSize = (priceSize - 5).coerceAtLeast(9).sp,
             )
         }
     }
 }
 
+/** City, age and condition: the three facts a buyer scans before opening an ad. */
 @Composable
-fun DiscountBadge(percentOff: Int, modifier: Modifier = Modifier) {
+fun ListingMetaRow(
+    listing: Listing,
+    nowMillis: Long,
+    modifier: Modifier = Modifier,
+    textSize: Int = 11,
+) {
     Text(
-        text = "-$percentOff%",
-        color = Color.White,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(CommerceColors.Discount)
-            .padding(horizontal = 5.dp, vertical = 2.dp),
+        text = buildString {
+            append(listing.city)
+            if (listing.postedAtMillis > 0L) {
+                append(" · ")
+                append(formatPostedAge(listing.postedAtMillis, nowMillis))
+            }
+            append(" · ")
+            append(listing.condition.label)
+        },
+        color = CommerceColors.OnSurfaceMuted,
+        fontSize = textSize.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
     )
 }
 
 @Composable
-fun RatingRow(
+fun SellerRatingRow(
     rating: Float,
     ratingCount: Int,
-    soldCount: Int,
     modifier: Modifier = Modifier,
     textSize: Int = 11,
 ) {
@@ -154,20 +162,13 @@ fun RatingRow(
         )
         Spacer(Modifier.width(3.dp))
         Text(
-            text = String.format(java.util.Locale.US, "%.1f", rating),
+            text = String.format(Locale.US, "%.1f", rating),
             color = CommerceColors.OnSurfaceMuted,
             fontSize = textSize.sp,
         )
         if (ratingCount > 0) {
             Text(
-                text = " (${ratingCount.formatCompact()})",
-                color = CommerceColors.OnSurfaceMuted,
-                fontSize = textSize.sp,
-            )
-        }
-        if (soldCount > 0) {
-            Text(
-                text = " · ${soldCount.formatCompact()} sold",
+                text = " ($ratingCount ratings)",
                 color = CommerceColors.OnSurfaceMuted,
                 fontSize = textSize.sp,
                 maxLines = 1,
@@ -177,24 +178,30 @@ fun RatingRow(
     }
 }
 
-/** Filled call to action. This is the only button style that moves money. */
+/** Filled call to action. Reserved for contacting a seller and for posting an ad. */
 @Composable
-fun BuyButton(
+fun PrimaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     container: Color = CommerceColors.Accent,
     contentColor: Color = Color.White,
+    leadingEmoji: String? = null,
 ) {
-    Box(
+    Row(
         modifier = modifier
             .height(48.dp)
             .clip(RoundedCornerShape(CommerceDimens.PillCorner))
             .background(if (enabled) container else CommerceColors.Outline)
             .clickableNoRipple(enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (leadingEmoji != null) {
+            Text(text = leadingEmoji, fontSize = 15.sp)
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             text = text,
             color = if (enabled) contentColor else CommerceColors.OnSurfaceMuted,
@@ -210,15 +217,21 @@ fun SecondaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    leadingEmoji: String? = null,
 ) {
-    Box(
+    Row(
         modifier = modifier
             .height(48.dp)
             .clip(RoundedCornerShape(CommerceDimens.PillCorner))
             .border(1.dp, CommerceColors.Outline, RoundedCornerShape(CommerceDimens.PillCorner))
             .clickableNoRipple(enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (leadingEmoji != null) {
+            Text(text = leadingEmoji, fontSize = 15.sp)
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             text = text,
             color = if (enabled) CommerceColors.OnSurface else CommerceColors.OnSurfaceMuted,
@@ -228,75 +241,7 @@ fun SecondaryButton(
     }
 }
 
-/** Minus / count / plus control shared by the cart and the product sheet. */
-@Composable
-fun QuantityStepper(
-    quantity: Int,
-    onDecrement: () -> Unit,
-    onIncrement: () -> Unit,
-    modifier: Modifier = Modifier,
-    minQuantity: Int = 1,
-    maxQuantity: Int = 99,
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(CommerceDimens.PillCorner))
-            .border(1.dp, CommerceColors.Outline, RoundedCornerShape(CommerceDimens.PillCorner)),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StepperIcon(
-            enabled = quantity > minQuantity,
-            onClick = onDecrement,
-            content = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_minus_24),
-                    contentDescription = "Decrease quantity",
-                    tint = it,
-                    modifier = Modifier.size(16.dp),
-                )
-            },
-        )
-        Text(
-            text = quantity.toString(),
-            color = CommerceColors.OnSurface,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(34.dp),
-        )
-        StepperIcon(
-            enabled = quantity < maxQuantity,
-            onClick = onIncrement,
-            content = {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Increase quantity",
-                    tint = it,
-                    modifier = Modifier.size(16.dp),
-                )
-            },
-        )
-    }
-}
-
-@Composable
-private fun StepperIcon(
-    enabled: Boolean,
-    onClick: () -> Unit,
-    content: @Composable (Color) -> Unit,
-) {
-    val tint = if (enabled) CommerceColors.OnSurface else CommerceColors.OnSurfaceMuted
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clickableNoRipple(enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        content(tint)
-    }
-}
-
-/** Selectable chip used for categories and for product variant values. */
+/** Selectable chip used for categories, cities and condition. */
 @Composable
 fun CommerceChip(
     text: String,
@@ -322,39 +267,6 @@ fun CommerceChip(
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
         )
-    }
-}
-
-/** One variant axis rendered as a wrapping row of chips. */
-@Composable
-fun OptionPicker(
-    optionName: String,
-    values: List<String>,
-    selectedValue: String?,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = optionName,
-            color = CommerceColors.OnSurfaceMuted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(8.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            values.forEach { value ->
-                CommerceChip(
-                    text = value,
-                    selected = value == selectedValue,
-                    onClick = { onSelect(value) },
-                )
-            }
-        }
     }
 }
 
@@ -419,7 +331,7 @@ fun EmptyState(
         )
         if (actionText != null && onActionClick != null) {
             Spacer(Modifier.height(20.dp))
-            BuyButton(
+            PrimaryButton(
                 text = actionText,
                 onClick = onActionClick,
                 modifier = Modifier.fillMaxWidth(),
@@ -428,14 +340,14 @@ fun EmptyState(
     }
 }
 
-/** Grid tile used on the shop tab and on a creator storefront. */
+/** Grid tile used on the Browse tab and on a seller's profile. */
 @Composable
-fun ProductCard(
-    product: Product,
+fun ListingCard(
+    listing: Listing,
+    nowMillis: Long,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     sellerHandle: String? = null,
-    onAddToCart: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -444,77 +356,60 @@ fun ProductCard(
             .clickableNoRipple { onClick() },
     ) {
         Box {
-            ProductImage(
-                seed = product.id,
-                emoji = product.emoji,
-                imageUrl = product.imageUrl,
+            ListingImage(
+                seed = listing.id,
+                emoji = listing.emoji,
+                imageUrl = listing.imageUrl,
                 corner = 0.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f),
             )
-            product.discountPercent?.let { percent ->
-                DiscountBadge(
-                    percentOff = percent,
+            if (listing.condition == ListingCondition.NEW) {
+                Text(
+                    text = "New",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(8.dp),
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(CommerceColors.Accent)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
-            if (!product.isInStock) {
+            if (listing.isSold) {
                 Box(
                     modifier = Modifier
                         .matchParentSize()
                         .background(CommerceColors.Scrim),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "Sold out", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-            if (onAddToCart != null && product.isInStock) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(8.dp)
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(CommerceColors.Accent)
-                        .clickableNoRipple { onAddToCart() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add to cart",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp),
-                    )
+                    Text(text = "Sold", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
         Column(modifier = Modifier.padding(10.dp)) {
+            PriceTag(
+                priceCents = listing.priceCents,
+                isNegotiable = listing.isNegotiable,
+                priceSize = 16,
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
-                text = product.title,
+                text = listing.title,
                 color = CommerceColors.OnSurface,
                 fontSize = 13.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = 17.sp,
             )
-            Spacer(Modifier.height(6.dp))
-            PriceRow(
-                priceCents = product.priceCents,
-                compareAtPriceCents = product.compareAtPriceCents,
-                priceSize = 15,
-            )
-            Spacer(Modifier.height(4.dp))
-            RatingRow(
-                rating = product.rating,
-                ratingCount = product.ratingCount,
-                soldCount = product.soldCount,
-            )
+            Spacer(Modifier.height(5.dp))
+            ListingMetaRow(listing = listing, nowMillis = nowMillis)
             if (sellerHandle != null) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = sellerHandle,
                     color = CommerceColors.OnSurfaceMuted,
@@ -525,4 +420,136 @@ fun ProductCard(
             }
         }
     }
+}
+
+/** Horizontal row used in sheets and lists. */
+@Composable
+fun ListingRow(
+    listing: Listing,
+    nowMillis: Long,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    index: Int? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CommerceDimens.CardCorner))
+            .background(CommerceColors.SurfaceElevated)
+            .clickableNoRipple { onClick() }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            ListingImage(
+                seed = listing.id,
+                emoji = listing.emoji,
+                imageUrl = listing.imageUrl,
+                emojiSize = 28,
+                corner = 10.dp,
+                modifier = Modifier.size(64.dp),
+            )
+            if (index != null) {
+                Text(
+                    text = index.toString(),
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(CommerceColors.Scrim)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            PriceTag(
+                priceCents = listing.priceCents,
+                isNegotiable = listing.isNegotiable,
+                priceSize = 15,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = listing.title,
+                color = CommerceColors.OnSurface,
+                fontSize = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(3.dp))
+            ListingMetaRow(listing = listing, nowMillis = nowMillis)
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            trailing()
+        }
+    }
+}
+
+/** Messages entry point with an unread badge. */
+@Composable
+fun MessagesIconWithBadge(
+    unreadCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    iconSize: Int = 30,
+    label: String? = null,
+) {
+    Column(
+        modifier = modifier.clickableNoRipple { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_chat_24),
+                contentDescription = "Messages",
+                tint = tint,
+                modifier = Modifier.size(iconSize.dp),
+            )
+            if (unreadCount > 0) {
+                Text(
+                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(CircleShape)
+                        .background(CommerceColors.Alert)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
+        }
+        if (label != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(text = label, color = tint, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+fun VerifiedTick(modifier: Modifier = Modifier, size: Dp = 14.dp) {
+    Icon(
+        painter = painterResource(id = R.drawable.ic_verified_24),
+        contentDescription = "Verified seller",
+        tint = CommerceColors.Call,
+        modifier = modifier.size(size),
+    )
+}
+
+@Composable
+fun FollowerLine(seller: Seller, listingCount: Int, modifier: Modifier = Modifier) {
+    Text(
+        text = "${seller.followers.formatCompact()} followers · $listingCount ads · ${seller.city}",
+        color = CommerceColors.OnSurfaceMuted,
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }

@@ -2,12 +2,12 @@ package com.densitech.scrollsmooth.ui.commerce.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.densitech.scrollsmooth.ui.commerce.data.ListingRepository
 import com.densitech.scrollsmooth.ui.commerce.data.LiveRepository
-import com.densitech.scrollsmooth.ui.commerce.data.ProductRepository
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.LiveChatKind
 import com.densitech.scrollsmooth.ui.commerce.model.LiveChatMessage
 import com.densitech.scrollsmooth.ui.commerce.model.LiveStream
-import com.densitech.scrollsmooth.ui.commerce.model.Product
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -20,8 +20,8 @@ import javax.inject.Inject
 import kotlin.random.Random
 
 /**
- * Drives one live room at a time: the chat ticker, the viewer count and the flash sale clock.
- * The simulation only runs while a room is on screen, so leaving the room stops the work.
+ * Drives one live room at a time: the chat ticker and the viewer count. The simulation only runs
+ * while a room is on screen, so leaving the room stops the work.
  */
 @HiltViewModel
 class LiveViewModel @Inject constructor() : ViewModel() {
@@ -38,21 +38,14 @@ class LiveViewModel @Inject constructor() : ViewModel() {
     private val _chat = MutableStateFlow<List<LiveChatMessage>>(emptyList())
     val chat = _chat.asStateFlow()
 
-    private val _secondsLeft = MutableStateFlow(0)
-    val secondsLeft = _secondsLeft.asStateFlow()
+    private val _pinnedListing = MutableStateFlow<Listing?>(null)
+    val pinnedListing = _pinnedListing.asStateFlow()
 
-    private val _pinnedProduct = MutableStateFlow<Product?>(null)
-    val pinnedProduct = _pinnedProduct.asStateFlow()
+    private val _openListing = MutableStateFlow<Listing?>(null)
+    val openListing = _openListing.asStateFlow()
 
-    private val _openProduct = MutableStateFlow<Product?>(null)
-    val openProduct = _openProduct.asStateFlow()
-
-    private val _showProductList = MutableStateFlow(false)
-    val showProductList = _showProductList.asStateFlow()
-
-    /** How many units the room has "sold" this session; purely for the social proof counter. */
-    private val _soldThisSession = MutableStateFlow(0)
-    val soldThisSession = _soldThisSession.asStateFlow()
+    private val _showListingList = MutableStateFlow(false)
+    val showListingList = _showListingList.asStateFlow()
 
     private var chatJob: Job? = null
     private var tickJob: Job? = null
@@ -66,15 +59,13 @@ class LiveViewModel @Inject constructor() : ViewModel() {
         leaveRoom()
         _activeStream.value = stream
         _viewerCount.value = stream.startingViewerCount
-        _secondsLeft.value = stream.flashSaleSeconds
-        _pinnedProduct.value = ProductRepository.product(stream.pinnedProductId)
-        _soldThisSession.value = 0
+        _pinnedListing.value = ListingRepository.listing(stream.pinnedListingId)
         _chat.value = listOf(
             LiveChatMessage(
                 id = chatSequence++,
                 author = "SmoothScroll",
                 emoji = "📣",
-                text = "Welcome in. Purchases are protected by buyer protection.",
+                text = "Deals happen off the app. Meet in a public place and check before you pay.",
             )
         )
         startSimulation()
@@ -85,56 +76,46 @@ class LiveViewModel @Inject constructor() : ViewModel() {
         tickJob?.cancel()
         chatJob = null
         tickJob = null
-        _openProduct.value = null
-        _showProductList.value = false
+        _openListing.value = null
+        _showListingList.value = false
     }
 
-    fun productsInRoom(): List<Product> {
+    fun listingsInRoom(): List<Listing> {
         val stream = _activeStream.value ?: return emptyList()
-        return ProductRepository.productsByIds(stream.productIds)
+        return ListingRepository.listingsByIds(stream.listingIds)
     }
 
-    fun seller(): Seller? = ProductRepository.seller(_activeStream.value?.sellerId)
+    fun seller(): Seller? = ListingRepository.seller(_activeStream.value?.sellerId)
 
-    fun sellerOf(stream: LiveStream): Seller? = ProductRepository.seller(stream.sellerId)
+    fun sellerOf(stream: LiveStream): Seller? = ListingRepository.seller(stream.sellerId)
 
-    fun pinnedProductOf(stream: LiveStream): Product? = ProductRepository.product(stream.pinnedProductId)
+    fun pinnedListingOf(stream: LiveStream): Listing? = ListingRepository.listing(stream.pinnedListingId)
 
-    /** Price after the room's flash sale discount, while the clock is still running. */
-    fun livePriceCents(product: Product): Long {
-        val stream = _activeStream.value ?: return product.priceCents
-        if (_secondsLeft.value <= 0) return product.priceCents
-        return LiveRepository.livePriceCents(product.priceCents, stream.flashSaleDiscountPercent)
+    fun openListing(listing: Listing) {
+        _openListing.value = listing
     }
 
-    fun isFlashSaleRunning(): Boolean = _secondsLeft.value > 0
-
-    fun openProduct(product: Product) {
-        _openProduct.value = product
+    fun closeListing() {
+        _openListing.value = null
     }
 
-    fun closeProduct() {
-        _openProduct.value = null
+    fun showListingList() {
+        _showListingList.value = true
     }
 
-    fun showProductList() {
-        _showProductList.value = true
+    fun hideListingList() {
+        _showListingList.value = false
     }
 
-    fun hideProductList() {
-        _showProductList.value = false
-    }
-
-    /** Called when the viewer actually buys, so the room reacts to them too. */
-    fun recordPurchase(quantity: Int) {
-        _soldThisSession.value += quantity
+    /** Called when the viewer contacts the seller, so the room reacts to them too. */
+    fun recordContact() {
         pushChat(
             LiveChatMessage(
                 id = chatSequence++,
                 author = "you",
-                emoji = "🛍",
-                text = "bought $quantity",
-                kind = LiveChatKind.PURCHASE,
+                emoji = "💬",
+                text = "messaged the seller",
+                kind = LiveChatKind.CONTACT,
             )
         )
     }
@@ -156,18 +137,13 @@ class LiveViewModel @Inject constructor() : ViewModel() {
         chatJob = viewModelScope.launch {
             while (isActive) {
                 delay(CHAT_INTERVAL_MIN_MS + random.nextLong(CHAT_INTERVAL_JITTER_MS))
-                val message = LiveRepository.chatMessage(chatSequence++, random)
-                pushChat(message)
-                if (message.kind == LiveChatKind.PURCHASE) {
-                    _soldThisSession.value += 1
-                }
+                pushChat(LiveRepository.chatMessage(chatSequence++, random))
             }
         }
 
         tickJob = viewModelScope.launch {
             while (isActive) {
                 delay(1_000)
-                if (_secondsLeft.value > 0) _secondsLeft.value -= 1
                 _viewerCount.value = LiveRepository.nextViewerCount(_viewerCount.value, random)
             }
         }

@@ -1,4 +1,4 @@
-package com.densitech.scrollsmooth.ui.commerce.shop
+package com.densitech.scrollsmooth.ui.commerce.browse
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,50 +43,53 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.densitech.scrollsmooth.ui.commerce.data.CommerceCatalog
+import com.densitech.scrollsmooth.ui.commerce.model.ListingCategory
 import com.densitech.scrollsmooth.ui.commerce.model.LiveStream
-import com.densitech.scrollsmooth.ui.commerce.model.ProductCategory
-import com.densitech.scrollsmooth.ui.commerce.model.ProductSelection
 import com.densitech.scrollsmooth.ui.commerce.model.formatCompact
-import com.densitech.scrollsmooth.ui.commerce.view.CartIconWithBadge
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceChip
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
 import com.densitech.scrollsmooth.ui.commerce.view.EmptyState
+import com.densitech.scrollsmooth.ui.commerce.view.ListingCard
+import com.densitech.scrollsmooth.ui.commerce.view.ListingDetailSheet
 import com.densitech.scrollsmooth.ui.commerce.view.LiveBadge
-import com.densitech.scrollsmooth.ui.commerce.view.ProductCard
-import com.densitech.scrollsmooth.ui.commerce.view.ProductDetailSheet
+import com.densitech.scrollsmooth.ui.commerce.view.MessagesIconWithBadge
 import com.densitech.scrollsmooth.ui.commerce.view.SectionHeader
 import com.densitech.scrollsmooth.ui.commerce.view.placeholderBrush
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.BrowseViewModel
 import com.densitech.scrollsmooth.ui.commerce.viewmodel.LiveViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.ShopViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 
 /**
- * The shop tab. Search, categories and a product grid, with the live rooms surfaced at the top
- * because a running live is the highest converting entry point in the app.
+ * The browse tab: search, category and city filters, and a grid of ads newest first, with the
+ * live rooms surfaced on top.
  */
 @Composable
-fun ShopScreen(
-    shopViewModel: ShopViewModel,
-    cartViewModel: CartViewModel,
+fun BrowseScreen(
+    browseViewModel: BrowseViewModel,
+    messagesViewModel: MessagesViewModel,
     liveViewModel: LiveViewModel,
-    onOpenCart: () -> Unit,
-    onOpenCheckout: () -> Unit,
+    onOpenMessages: () -> Unit,
+    onOpenConversation: (String) -> Unit,
     onOpenSeller: (String) -> Unit,
     onOpenLive: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val query by shopViewModel.query.collectAsState()
-    val category by shopViewModel.category.collectAsState()
-    val results by shopViewModel.results.collectAsState()
-    val openProduct by shopViewModel.openProduct.collectAsState()
-    val cart by cartViewModel.cart.collectAsState()
+    val query by browseViewModel.query.collectAsState()
+    val category by browseViewModel.category.collectAsState()
+    val selectedCity by browseViewModel.city.collectAsState()
+    val results by browseViewModel.results.collectAsState()
+    val openListing by browseViewModel.openListing.collectAsState()
+    val allListings by browseViewModel.allListings.collectAsState()
     val streams by liveViewModel.streams.collectAsState()
-    val allProducts by shopViewModel.allProducts.collectAsState()
+    val conversations by messagesViewModel.conversations.collectAsState()
 
-    // A product listed in Creator Studio should show up here without a restart.
-    LaunchedEffect(allProducts) { shopViewModel.refresh() }
+    val nowMillis = remember(results) { System.currentTimeMillis() }
+    val unread = remember(conversations) { conversations.count { it.hasUnread } }
+
+    // An ad posted from the profile should appear here without a restart.
+    LaunchedEffect(allListings) { browseViewModel.refresh() }
 
     Column(
         modifier = modifier
@@ -101,14 +105,14 @@ fun ShopScreen(
         ) {
             SearchField(
                 query = query,
-                onQueryChange = shopViewModel::onQueryChange,
-                onClear = shopViewModel::clearQuery,
+                onQueryChange = browseViewModel::onQueryChange,
+                onClear = browseViewModel::clearQuery,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(12.dp))
-            CartIconWithBadge(
-                itemCount = cart.itemCount,
-                onClick = onOpenCart,
+            MessagesIconWithBadge(
+                unreadCount = unread,
+                onClick = onOpenMessages,
                 tint = CommerceColors.OnSurface,
                 iconSize = 26,
             )
@@ -126,32 +130,33 @@ fun ShopScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                CategoryRow(
-                    selected = category,
-                    onSelect = shopViewModel::onCategoryChange,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
+                Column {
+                    CategoryRow(
+                        selected = category,
+                        onSelect = browseViewModel::onCategoryChange,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    CityRow(
+                        selected = selectedCity,
+                        onSelect = browseViewModel::onCityChange,
+                    )
+                }
             }
 
             if (query.isBlank() && streams.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column {
+                        Spacer(Modifier.height(8.dp))
                         SectionHeader(title = "Live right now")
                         Spacer(Modifier.height(10.dp))
                         LiveRail(
                             streams = streams,
                             sellerNameOf = { liveViewModel.sellerOf(it)?.displayName.orEmpty() },
-                            sellerEmojiOf = { liveViewModel.sellerOf(it)?.emoji ?: "🛍" },
+                            sellerEmojiOf = { liveViewModel.sellerOf(it)?.emoji ?: "📦" },
                             onOpenLive = onOpenLive,
                         )
                         Spacer(Modifier.height(18.dp))
-                        SectionHeader(
-                            title = if (category == ProductCategory.ALL) {
-                                "Trending"
-                            } else {
-                                category.label
-                            }
-                        )
+                        SectionHeader(title = "Newest ads")
                         Spacer(Modifier.height(4.dp))
                     }
                 }
@@ -162,47 +167,34 @@ fun ShopScreen(
                     EmptyState(
                         emoji = "🔍",
                         title = "Nothing matches that",
-                        subtitle = "Try a different search or clear the category filter.",
+                        subtitle = "Try another search, or clear the category and city filters.",
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
             } else {
-                items(results, key = { it.id }) { product ->
-                    ProductCard(
-                        product = product,
-                        sellerHandle = shopViewModel.seller(product.sellerId)?.atHandle,
-                        onClick = { shopViewModel.openProduct(product) },
-                        onAddToCart = {
-                            cartViewModel.addToCart(
-                                ProductSelection(
-                                    product = product,
-                                    options = product.defaultSelection(),
-                                    quantity = 1,
-                                    unitPriceCents = product.priceCents,
-                                )
-                            )
-                        },
+                items(results, key = { it.id }) { listing ->
+                    ListingCard(
+                        listing = listing,
+                        nowMillis = nowMillis,
+                        sellerHandle = browseViewModel.seller(listing.sellerId)?.atHandle,
+                        onClick = { browseViewModel.openListing(listing) },
                     )
                 }
             }
         }
     }
 
-    openProduct?.let { product ->
-        ProductDetailSheet(
-            product = product,
-            onDismiss = shopViewModel::closeProduct,
-            onAddToCart = { selection ->
-                cartViewModel.addToCart(selection)
-                shopViewModel.closeProduct()
-            },
-            onBuyNow = { selection ->
-                cartViewModel.addToCart(selection)
-                shopViewModel.closeProduct()
-                onOpenCheckout()
+    openListing?.let { listing ->
+        ListingDetailSheet(
+            listing = listing,
+            nowMillis = nowMillis,
+            onDismiss = browseViewModel::closeListing,
+            onMessageSeller = { target ->
+                browseViewModel.closeListing()
+                onOpenConversation(messagesViewModel.startConversation(target))
             },
             onOpenSeller = { sellerId ->
-                shopViewModel.closeProduct()
+                browseViewModel.closeListing()
                 onOpenSeller(sellerId)
             },
         )
@@ -234,7 +226,7 @@ private fun SearchField(
         Box(modifier = Modifier.weight(1f)) {
             if (query.isEmpty()) {
                 Text(
-                    text = "Search products and creators",
+                    text = "Search ads, sellers or cities",
                     color = CommerceColors.OnSurfaceMuted,
                     fontSize = 13.sp,
                 )
@@ -264,8 +256,8 @@ private fun SearchField(
 
 @Composable
 private fun CategoryRow(
-    selected: ProductCategory,
-    onSelect: (ProductCategory) -> Unit,
+    selected: ListingCategory,
+    onSelect: (ListingCategory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyRow(
@@ -277,6 +269,33 @@ private fun CategoryRow(
                 text = "${item.emoji}  ${item.label}",
                 selected = item == selected,
                 onClick = { onSelect(item) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun CityRow(
+    selected: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            CommerceChip(
+                text = "All cities",
+                selected = selected == null,
+                onClick = { onSelect(null) },
+            )
+        }
+        items(CommerceCatalog.cities, key = { it }) { city ->
+            CommerceChip(
+                text = city,
+                selected = city == selected,
+                onClick = { onSelect(if (selected == city) null else city) },
             )
         }
     }
@@ -340,8 +359,8 @@ private fun LiveRail(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${stream.flashSaleDiscountPercent}% off live",
-                    color = CommerceColors.Accent,
+                    text = stream.topic,
+                    color = CommerceColors.OnSurfaceMuted,
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

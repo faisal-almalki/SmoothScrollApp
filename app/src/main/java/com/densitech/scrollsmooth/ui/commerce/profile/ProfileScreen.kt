@@ -34,40 +34,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.densitech.scrollsmooth.R
 import com.densitech.scrollsmooth.ui.commerce.model.formatCompact
-import com.densitech.scrollsmooth.ui.commerce.model.formatMoney
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
+import com.densitech.scrollsmooth.ui.commerce.view.PrimaryButton
 import com.densitech.scrollsmooth.ui.commerce.view.SectionHeader
 import com.densitech.scrollsmooth.ui.commerce.view.placeholderBrush
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CreatorViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.ShopViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.BrowseViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MyListingsViewModel
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 
 /**
- * The signed in person's own page. Because every account on this platform can sell, the shopper
- * side and the creator side both hang off here.
+ * My account. Everyone here both buys and sells, so this page carries the ads you have posted and
+ * the conversations they started, side by side.
  */
 @Composable
 fun ProfileScreen(
-    creatorViewModel: CreatorViewModel,
-    cartViewModel: CartViewModel,
-    shopViewModel: ShopViewModel,
-    onOpenOrders: () -> Unit,
-    onOpenCart: () -> Unit,
-    onOpenStudio: () -> Unit,
-    onOpenMyShop: () -> Unit,
+    myListingsViewModel: MyListingsViewModel,
+    messagesViewModel: MessagesViewModel,
+    browseViewModel: BrowseViewModel,
+    onPostListing: () -> Unit,
+    onOpenMyListings: () -> Unit,
+    onOpenMessages: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenSeller: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val me by creatorViewModel.me.collectAsState()
-    val orders by cartViewModel.orders.collectAsState()
-    val cart by cartViewModel.cart.collectAsState()
-    val following by shopViewModel.following.collectAsState()
-    val allProducts by creatorViewModel.allProducts.collectAsState()
+    val me by myListingsViewModel.me.collectAsState()
+    val allListings by myListingsViewModel.allListings.collectAsState()
+    val conversations by messagesViewModel.conversations.collectAsState()
+    val following by browseViewModel.following.collectAsState()
 
-    val myProducts = allProducts.filter { it.sellerId == me.id }
-    val revenueCents = creatorViewModel.myGrossRevenueCents()
+    val myListings = allListings.filter { it.sellerId == me.id }
+    val liveListings = myListings.filterNot { it.isSold }
+    val totalViews = liveListings.sumOf { it.viewCount }
+    val unread = conversations.count { it.hasUnread }
 
     Column(
         modifier = modifier
@@ -99,7 +100,7 @@ fun ProfileScreen(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = me.atHandle,
+                text = "${me.atHandle} · ${me.city}",
                 color = CommerceColors.OnSurfaceMuted,
                 fontSize = 13.sp,
             )
@@ -109,14 +110,20 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                StatColumn(value = me.followers.formatCompact(), label = "Followers")
+                StatColumn(value = liveListings.size.toString(), label = "Live ads")
+                StatColumn(value = totalViews.formatCompact(), label = "Views")
+                StatColumn(value = conversations.size.toString(), label = "Chats")
                 StatColumn(value = following.size.toString(), label = "Following")
-                StatColumn(value = myProducts.size.toString(), label = "Listings")
-                StatColumn(value = orders.size.toString(), label = "Orders")
             }
-        }
 
-        Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(18.dp))
+            PrimaryButton(
+                text = "Post an ad",
+                leadingEmoji = "➕",
+                onClick = onPostListing,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         Column(modifier = Modifier.padding(horizontal = CommerceDimens.ScreenPadding)) {
             SectionHeader(title = "Selling")
@@ -124,64 +131,61 @@ fun ProfileScreen(
 
             ProfileRow(
                 icon = painterResource(id = R.drawable.ic_storefront_24),
-                title = "Creator Studio",
-                subtitle = if (myProducts.isEmpty()) {
-                    "List your first product and start selling"
+                title = "My ads",
+                subtitle = if (myListings.isEmpty()) {
+                    "You have not posted anything yet"
                 } else {
-                    "${myProducts.size} listings · ${revenueCents.formatMoney()} gross"
+                    "${liveListings.size} live · ${myListings.size - liveListings.size} sold"
                 },
-                onClick = onOpenStudio,
+                onClick = onOpenMyListings,
             )
             Spacer(Modifier.height(8.dp))
             ProfileRow(
-                icon = painterResource(id = R.drawable.ic_shop_bag_24),
-                title = "My storefront",
-                subtitle = "See your shop the way buyers see it",
-                onClick = onOpenMyShop,
+                icon = painterResource(id = R.drawable.ic_phone_24),
+                title = "Contact settings",
+                subtitle = if (me.hasPublicPhone) {
+                    "Calls on · ${me.phoneNumber}"
+                } else {
+                    "Calls off · messages only"
+                },
+                onClick = onOpenSettings,
             )
 
             Spacer(Modifier.height(22.dp))
-            SectionHeader(title = "Shopping")
+            SectionHeader(title = "Buying")
             Spacer(Modifier.height(10.dp))
 
             ProfileRow(
-                icon = painterResource(id = R.drawable.ic_receipt_24),
-                title = "My orders",
-                subtitle = if (orders.isEmpty()) "Nothing ordered yet" else "${orders.size} orders",
-                onClick = onOpenOrders,
-            )
-            Spacer(Modifier.height(8.dp))
-            ProfileRow(
-                icon = painterResource(id = R.drawable.ic_cart_24),
-                title = "Cart",
-                subtitle = if (cart.isEmpty) {
-                    "Empty"
-                } else {
-                    "${cart.itemCount} items · ${cart.totalCents.formatMoney()}"
+                icon = painterResource(id = R.drawable.ic_chat_24),
+                title = "Messages",
+                subtitle = when {
+                    conversations.isEmpty() -> "No conversations yet"
+                    unread > 0 -> "$unread unread · ${conversations.size} conversations"
+                    else -> "${conversations.size} conversations"
                 },
-                onClick = onOpenCart,
+                onClick = onOpenMessages,
             )
 
             Spacer(Modifier.height(22.dp))
-            SectionHeader(title = "Creators you follow")
+            SectionHeader(title = "Sellers you follow")
             Spacer(Modifier.height(10.dp))
 
             if (following.isEmpty()) {
                 Text(
-                    text = "Follow a creator from any video to see their drops here first.",
+                    text = "Follow a seller from any video to see their new ads first.",
                     color = CommerceColors.OnSurfaceMuted,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
             } else {
                 following.forEach { sellerId ->
-                    shopViewModel.seller(sellerId)?.let { seller ->
+                    browseViewModel.seller(sellerId)?.let { seller ->
                         ProfileRow(
                             emoji = seller.emoji,
                             title = seller.displayName,
                             subtitle = "${seller.followers.formatCompact()} followers · ${
-                                shopViewModel.productsOf(seller.id).size
-                            } listings",
+                                browseViewModel.listingsOf(seller.id).size
+                            } ads · ${seller.city}",
                             onClick = { onOpenSeller(seller.id) },
                             modifier = Modifier.padding(bottom = 8.dp),
                         )

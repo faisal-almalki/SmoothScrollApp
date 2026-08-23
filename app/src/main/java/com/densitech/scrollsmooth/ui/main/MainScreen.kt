@@ -30,23 +30,22 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.densitech.scrollsmooth.ui.audio.AudioSelectionViewModel
-import com.densitech.scrollsmooth.ui.commerce.cart.CartScreen
-import com.densitech.scrollsmooth.ui.commerce.cart.CheckoutScreen
-import com.densitech.scrollsmooth.ui.commerce.cart.OrderPlacedScreen
-import com.densitech.scrollsmooth.ui.commerce.cart.OrdersScreen
-import com.densitech.scrollsmooth.ui.commerce.creator.TagProductsScreen
+import com.densitech.scrollsmooth.ui.commerce.browse.BrowseScreen
+import com.densitech.scrollsmooth.ui.commerce.creator.TagListingsScreen
 import com.densitech.scrollsmooth.ui.commerce.live.LiveRoomScreen
 import com.densitech.scrollsmooth.ui.commerce.live.LiveScreen
-import com.densitech.scrollsmooth.ui.commerce.profile.AddProductScreen
+import com.densitech.scrollsmooth.ui.commerce.messages.ChatScreen
+import com.densitech.scrollsmooth.ui.commerce.messages.InboxScreen
+import com.densitech.scrollsmooth.ui.commerce.profile.AccountSettingsScreen
+import com.densitech.scrollsmooth.ui.commerce.profile.MyListingsScreen
+import com.densitech.scrollsmooth.ui.commerce.profile.PostListingScreen
 import com.densitech.scrollsmooth.ui.commerce.profile.ProfileScreen
-import com.densitech.scrollsmooth.ui.commerce.profile.SellerDashboardScreen
 import com.densitech.scrollsmooth.ui.commerce.profile.StorefrontScreen
-import com.densitech.scrollsmooth.ui.commerce.shop.ShopScreen
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CreatorViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.BrowseViewModel
 import com.densitech.scrollsmooth.ui.commerce.viewmodel.LiveViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.ShopViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MyListingsViewModel
 import com.densitech.scrollsmooth.ui.video.view.VideoScreen
 import com.densitech.scrollsmooth.ui.video.viewmodel.VideoScreenViewModel
 import com.densitech.scrollsmooth.ui.video_creation.view.VideoCreationScreen
@@ -57,20 +56,19 @@ import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
 /**
  * Routes that take over the whole screen. The bottom bar is hidden on these so the video, the
- * live room or the checkout gets the full height.
+ * live room or a conversation gets the full height.
  */
 private val FULL_SCREEN_ROUTES = setOf(
     Screen.Add.route,
     Screen.VideoTransformation.route,
     Screen.LiveRoom.route,
-    Screen.Cart.route,
-    Screen.Checkout.route,
-    Screen.OrderPlaced.route,
-    Screen.Orders.route,
-    Screen.CreatorStudio.route,
-    Screen.AddProduct.route,
+    Screen.Inbox.route,
+    Screen.Chat.route,
+    Screen.MyListings.route,
+    Screen.PostListing.route,
+    Screen.AccountSettings.route,
     Screen.Storefront.route,
-    Screen.TagProducts.route,
+    Screen.TagListings.route,
 )
 
 @OptIn(UnstableApi::class)
@@ -81,14 +79,14 @@ fun MainScreen(
     videoCreationViewModel: VideoCreationViewModel = hiltViewModel(),
     videoTransformationViewModel: VideoTransformationViewModel = hiltViewModel(),
     audioSelectionViewModel: AudioSelectionViewModel = hiltViewModel(),
-    // Commerce view models are resolved here, at activity scope, so the cart the feed adds to is
-    // the same cart the shop tab and checkout read.
-    cartViewModel: CartViewModel = hiltViewModel(),
-    shopViewModel: ShopViewModel = hiltViewModel(),
+    // Marketplace view models are resolved here, at activity scope, so the feed, the live rooms
+    // and the browse tab all share one set of listings and one inbox.
+    browseViewModel: BrowseViewModel = hiltViewModel(),
+    messagesViewModel: MessagesViewModel = hiltViewModel(),
     liveViewModel: LiveViewModel = hiltViewModel(),
-    creatorViewModel: CreatorViewModel = hiltViewModel(),
+    myListingsViewModel: MyListingsViewModel = hiltViewModel(),
 ) {
-    val tabTitles = listOf(Screen.Home, Screen.Shop, Screen.Add, Screen.Live, Screen.Profile)
+    val tabTitles = listOf(Screen.Home, Screen.Browse, Screen.Add, Screen.Live, Screen.Profile)
 
     val homeVideoPagerState = rememberPagerState(
         pageCount = {
@@ -129,11 +127,11 @@ fun MainScreen(
             restoreState = true
         }
     }
-    val openCart: () -> Unit = { navController.navigate(Screen.Cart.route) }
-    val openCheckout: () -> Unit = { navController.navigate(Screen.Checkout.route) }
-    val openOrders: () -> Unit = { navController.navigate(Screen.Orders.route) }
+    val openInbox: () -> Unit = { navController.navigate(Screen.Inbox.route) }
+    val openConversation: (String) -> Unit = { navController.navigate(Screen.Chat.create(it)) }
     val openSeller: (String) -> Unit = { navController.navigate(Screen.Storefront.create(it)) }
     val openLiveRoom: (String) -> Unit = { navController.navigate(Screen.LiveRoom.create(it)) }
+    val openPostListing: () -> Unit = { navController.navigate(Screen.PostListing.route) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -178,22 +176,22 @@ fun MainScreen(
                 VideoScreen(
                     pagerState = homeVideoPagerState,
                     videoScreenViewModel = videoScreenViewModel,
-                    shopViewModel = shopViewModel,
-                    cartViewModel = cartViewModel,
-                    onOpenCart = openCart,
-                    onOpenCheckout = openCheckout,
+                    browseViewModel = browseViewModel,
+                    messagesViewModel = messagesViewModel,
+                    onOpenMessages = openInbox,
+                    onOpenConversation = openConversation,
                     onOpenSeller = openSeller,
                     onOpenLive = openLiveRoom,
                 )
             }
 
-            composable(Screen.Shop.route) {
-                ShopScreen(
-                    shopViewModel = shopViewModel,
-                    cartViewModel = cartViewModel,
+            composable(Screen.Browse.route) {
+                BrowseScreen(
+                    browseViewModel = browseViewModel,
+                    messagesViewModel = messagesViewModel,
                     liveViewModel = liveViewModel,
-                    onOpenCart = openCart,
-                    onOpenCheckout = openCheckout,
+                    onOpenMessages = openInbox,
+                    onOpenConversation = openConversation,
                     onOpenSeller = openSeller,
                     onOpenLive = openLiveRoom,
                 )
@@ -202,9 +200,9 @@ fun MainScreen(
             composable(Screen.Live.route) {
                 LiveScreen(
                     liveViewModel = liveViewModel,
-                    cartViewModel = cartViewModel,
+                    messagesViewModel = messagesViewModel,
                     onOpenRoom = openLiveRoom,
-                    onOpenCart = openCart,
+                    onOpenMessages = openInbox,
                 )
             }
 
@@ -221,17 +219,13 @@ fun MainScreen(
 
             composable(Screen.Profile.route) {
                 ProfileScreen(
-                    creatorViewModel = creatorViewModel,
-                    cartViewModel = cartViewModel,
-                    shopViewModel = shopViewModel,
-                    onOpenOrders = openOrders,
-                    onOpenCart = openCart,
-                    onOpenStudio = { navController.navigate(Screen.CreatorStudio.route) },
-                    onOpenMyShop = {
-                        navController.navigate(
-                            Screen.Storefront.create(creatorViewModel.me.value.id)
-                        )
-                    },
+                    myListingsViewModel = myListingsViewModel,
+                    messagesViewModel = messagesViewModel,
+                    browseViewModel = browseViewModel,
+                    onPostListing = openPostListing,
+                    onOpenMyListings = { navController.navigate(Screen.MyListings.route) },
+                    onOpenMessages = openInbox,
+                    onOpenSettings = { navController.navigate(Screen.AccountSettings.route) },
                     onOpenSeller = openSeller,
                 )
             }
@@ -247,46 +241,27 @@ fun MainScreen(
                 )
             }
 
-            composable(Screen.Cart.route) {
-                CartScreen(
-                    cartViewModel = cartViewModel,
-                    shopViewModel = shopViewModel,
+            composable(Screen.Inbox.route) {
+                InboxScreen(
+                    messagesViewModel = messagesViewModel,
                     onBack = { navController.popBackStack() },
-                    onCheckout = openCheckout,
-                    onKeepShopping = { openTab(Screen.Shop) },
-                    onOpenSeller = openSeller,
+                    onOpenConversation = openConversation,
+                    onBrowse = { openTab(Screen.Browse) },
                 )
             }
 
-            composable(Screen.Checkout.route) {
-                CheckoutScreen(
-                    cartViewModel = cartViewModel,
+            composable(Screen.Chat.route) { entry ->
+                val raw = entry.arguments?.getString(Screen.Chat.ARG_CONVERSATION_ID).orEmpty()
+                ChatScreen(
+                    conversationId = Screen.Chat.decode(raw),
+                    messagesViewModel = messagesViewModel,
                     onBack = { navController.popBackStack() },
-                    onOrderPlaced = { orderId ->
-                        navController.navigate(Screen.OrderPlaced.create(orderId)) {
-                            // The cart is gone once the order exists, so drop checkout and cart
-                            // off the back stack rather than letting the shopper walk back into them.
-                            popUpTo(Screen.Home.route)
+                    onOpenSeller = openSeller,
+                    onOpenListing = { listingId ->
+                        messagesViewModel.listing(listingId)?.let { listing ->
+                            openSeller(listing.sellerId)
                         }
                     },
-                )
-            }
-
-            composable(Screen.OrderPlaced.route) { entry ->
-                val orderId = entry.arguments?.getString(Screen.OrderPlaced.ARG_ORDER_ID).orEmpty()
-                OrderPlacedScreen(
-                    orderId = orderId,
-                    cartViewModel = cartViewModel,
-                    onKeepShopping = { openTab(Screen.Shop) },
-                    onViewOrders = openOrders,
-                )
-            }
-
-            composable(Screen.Orders.route) {
-                OrdersScreen(
-                    cartViewModel = cartViewModel,
-                    onBack = { navController.popBackStack() },
-                    onKeepShopping = { openTab(Screen.Shop) },
                 )
             }
 
@@ -295,10 +270,9 @@ fun MainScreen(
                 LiveRoomScreen(
                     streamId = streamId,
                     liveViewModel = liveViewModel,
-                    cartViewModel = cartViewModel,
+                    messagesViewModel = messagesViewModel,
                     onClose = { navController.popBackStack() },
-                    onOpenCart = openCart,
-                    onOpenCheckout = openCheckout,
+                    onOpenConversation = openConversation,
                     onOpenSeller = openSeller,
                 )
             }
@@ -307,42 +281,45 @@ fun MainScreen(
                 val sellerId = entry.arguments?.getString(Screen.Storefront.ARG_SELLER_ID).orEmpty()
                 StorefrontScreen(
                     sellerId = sellerId,
-                    shopViewModel = shopViewModel,
-                    cartViewModel = cartViewModel,
+                    browseViewModel = browseViewModel,
+                    messagesViewModel = messagesViewModel,
                     onBack = { navController.popBackStack() },
-                    onOpenCheckout = openCheckout,
+                    onOpenConversation = openConversation,
                     onOpenLive = openLiveRoom,
                 )
             }
 
-            composable(Screen.CreatorStudio.route) {
-                SellerDashboardScreen(
-                    creatorViewModel = creatorViewModel,
+            composable(Screen.MyListings.route) {
+                MyListingsScreen(
+                    myListingsViewModel = myListingsViewModel,
+                    messagesViewModel = messagesViewModel,
                     onBack = { navController.popBackStack() },
-                    onListProduct = { navController.navigate(Screen.AddProduct.route) },
-                    onOpenMyShop = {
-                        navController.navigate(
-                            Screen.Storefront.create(creatorViewModel.me.value.id)
-                        )
-                    },
+                    onPostListing = openPostListing,
                 )
             }
 
-            composable(Screen.AddProduct.route) {
-                AddProductScreen(
-                    creatorViewModel = creatorViewModel,
+            composable(Screen.PostListing.route) {
+                PostListingScreen(
+                    myListingsViewModel = myListingsViewModel,
                     onBack = { navController.popBackStack() },
-                    onListed = { navController.popBackStack() },
+                    onPosted = { navController.popBackStack() },
                 )
             }
 
-            composable(Screen.TagProducts.route) { entry ->
-                val videoId = entry.arguments?.getString(Screen.TagProducts.ARG_VIDEO_ID).orEmpty()
-                TagProductsScreen(
+            composable(Screen.AccountSettings.route) {
+                AccountSettingsScreen(
+                    myListingsViewModel = myListingsViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Screen.TagListings.route) { entry ->
+                val videoId = entry.arguments?.getString(Screen.TagListings.ARG_VIDEO_ID).orEmpty()
+                TagListingsScreen(
                     videoId = videoId,
-                    creatorViewModel = creatorViewModel,
+                    myListingsViewModel = myListingsViewModel,
                     onBack = { navController.popBackStack() },
-                    onListProduct = { navController.navigate(Screen.AddProduct.route) },
+                    onPostListing = openPostListing,
                     onPublished = {
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.Home.route) { inclusive = true }

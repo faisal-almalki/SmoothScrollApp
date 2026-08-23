@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,43 +42,39 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.densitech.scrollsmooth.R
-import com.densitech.scrollsmooth.ui.commerce.model.Product
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.formatMoney
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 import kotlinx.coroutines.delay
 
 /**
- * The shopping affordance that sits over a feed video.
+ * The ad tag that sits over a feed video.
  *
- * It starts as a small yellow bag and expands into a product pill a beat after the video starts
- * playing, which is the pattern shoppers already know from short video commerce apps: the video
- * gets the first moment, the product gets the second.
+ * It starts as a small tag icon and expands into a price pill a beat after the video starts
+ * playing: the video gets the first moment, the ad gets the second.
  */
 @Composable
-fun VideoProductPill(
-    product: Product,
+fun VideoListingPill(
+    listing: Listing,
     totalTaggedCount: Int,
-    onProductClick: () -> Unit,
+    onListingClick: () -> Unit,
     onSeeAllClick: () -> Unit,
     modifier: Modifier = Modifier,
     expandDelayMillis: Long = 1_400,
 ) {
-    var expanded by remember(product.id) { mutableStateOf(false) }
+    var expanded by remember(listing.id) { mutableStateOf(false) }
 
-    LaunchedEffect(product.id) {
+    LaunchedEffect(listing.id) {
         delay(expandDelayMillis)
         expanded = true
     }
 
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(CommerceDimens.PillCorner))
                 .background(Color.White.copy(alpha = 0.95f))
-                .clickableNoRipple { if (expanded) onProductClick() else expanded = true }
+                .clickableNoRipple { if (expanded) onListingClick() else expanded = true }
                 .padding(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -92,7 +87,7 @@ fun VideoProductPill(
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_shop_bag_24),
-                    contentDescription = "Shop this video",
+                    contentDescription = "See what this video is selling",
                     tint = Color.White,
                     modifier = Modifier.size(18.dp),
                 )
@@ -105,9 +100,9 @@ fun VideoProductPill(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(8.dp))
-                    Column(modifier = Modifier.widthIn(max = 150.dp)) {
+                    Column(modifier = Modifier.widthIn(max = 152.dp)) {
                         Text(
-                            text = product.title,
+                            text = listing.title,
                             color = Color(0xFF111114),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -116,27 +111,30 @@ fun VideoProductPill(
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = product.priceCents.formatMoney(),
-                                color = CommerceColors.Accent,
+                                text = if (listing.isFree) "Free" else listing.priceCents.formatMoney(),
+                                color = CommerceColors.AccentPressed,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                             )
-                            product.discountPercent?.let {
-                                Spacer(Modifier.width(4.dp))
-                                DiscountBadge(percentOff = it)
-                            }
+                            Text(
+                                text = " · ${listing.city}",
+                                color = Color(0xFF6B6B75),
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        text = "Shop",
+                        text = "View",
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(CommerceDimens.PillCorner))
                             .background(CommerceColors.Accent)
-                            .clickableNoRipple { onProductClick() }
+                            .clickableNoRipple { onListingClick() }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                     Spacer(Modifier.width(2.dp))
@@ -154,7 +152,11 @@ fun VideoProductPill(
                 modifier = Modifier
                     .clip(RoundedCornerShape(CommerceDimens.PillCorner))
                     .background(CommerceColors.Scrim)
-                    .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(CommerceDimens.PillCorner))
+                    .border(
+                        1.dp,
+                        Color.White.copy(alpha = 0.35f),
+                        RoundedCornerShape(CommerceDimens.PillCorner),
+                    )
                     .clickableNoRipple { onSeeAllClick() }
                     .padding(horizontal = 9.dp, vertical = 6.dp),
             )
@@ -162,9 +164,7 @@ fun VideoProductPill(
     }
 }
 
-/**
- * "LIVE" chip with a breathing dot, used both on the feed and on the live grid.
- */
+/** "LIVE" chip with a breathing dot, used on the feed and on the live grid. */
 @Composable
 fun LiveBadge(
     modifier: Modifier = Modifier,
@@ -206,14 +206,15 @@ fun LiveBadge(
 }
 
 /**
- * The creator strip under a feed video: avatar, handle, follow, and a "live now" entry point when
- * that creator happens to be streaming.
+ * The seller strip under a feed video: avatar, handle, and a way into their live room when they
+ * happen to be streaming.
  */
 @Composable
 fun VideoSellerStrip(
     displayName: String,
     handle: String,
     emoji: String,
+    city: String,
     isVerified: Boolean,
     isLiveNow: Boolean,
     onSellerClick: () -> Unit,
@@ -244,16 +245,11 @@ fun VideoSellerStrip(
                 )
                 if (isVerified) {
                     Spacer(Modifier.width(4.dp))
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_verified_24),
-                        contentDescription = "Verified seller",
-                        tint = CommerceColors.Accent,
-                        modifier = Modifier.size(13.dp),
-                    )
+                    VerifiedTick(size = 13.dp)
                 }
             }
             Text(
-                text = "@$handle",
+                text = "@$handle · $city",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 11.sp,
                 maxLines = 1,
@@ -284,48 +280,6 @@ fun VideoSellerStrip(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-        }
-    }
-}
-
-/** Cart button with an item-count badge, used in the feed rail and on commerce top bars. */
-@Composable
-fun CartIconWithBadge(
-    itemCount: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    tint: Color = Color.White,
-    iconSize: Int = 30,
-    label: String? = null,
-) {
-    Column(
-        modifier = modifier.clickableNoRipple { onClick() },
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_cart_24),
-                contentDescription = "Cart",
-                tint = tint,
-                modifier = Modifier.size(iconSize.dp),
-            )
-            if (itemCount > 0) {
-                Text(
-                    text = if (itemCount > 99) "99+" else itemCount.toString(),
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .clip(CircleShape)
-                        .background(CommerceColors.Accent)
-                        .padding(horizontal = 5.dp, vertical = 1.dp),
-                )
-            }
-        }
-        if (label != null) {
-            Spacer(Modifier.height(2.dp))
-            Text(text = label, color = tint, fontSize = 12.sp)
         }
     }
 }

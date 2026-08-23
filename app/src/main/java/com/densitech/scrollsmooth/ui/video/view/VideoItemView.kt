@@ -31,8 +31,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import com.densitech.scrollsmooth.ui.commerce.model.Product
-import com.densitech.scrollsmooth.ui.commerce.view.VideoProductPill
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
+import com.densitech.scrollsmooth.ui.commerce.view.VideoListingPill
 import com.densitech.scrollsmooth.ui.commerce.view.VideoSellerStrip
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 import com.densitech.scrollsmooth.ui.video.PlayerSurface
@@ -53,9 +53,9 @@ fun VideoItemView(
     onPlayerDestroy: (Int) -> Unit,
     onPauseClick: (Boolean) -> Unit,
     onDownloadVideoClick: (Int) -> Unit,
-    onProductClick: (Product) -> Unit,
-    onSeeAllProductsClick: (List<Product>) -> Unit,
-    onCartClick: () -> Unit,
+    onListingClick: (Listing) -> Unit,
+    onSeeAllListingsClick: (List<Listing>) -> Unit,
+    onMessagesClick: () -> Unit,
     onSellerClick: (String) -> Unit,
     onWatchLiveClick: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -246,8 +246,8 @@ fun VideoItemView(
                         commentCount = 10,
                         shareCount = 10,
                         isDownloaded = params.isDownloaded,
-                        cartItemCount = params.cartItemCount,
-                        taggedProductCount = params.taggedProducts.size,
+                        unreadMessageCount = params.unreadMessageCount,
+                        taggedListingCount = params.taggedListings.size,
                     ),
                     onLikeClick = {},
                     onCommentClick = {},
@@ -255,15 +255,15 @@ fun VideoItemView(
                     onDownloadClick = {
                         onDownloadVideoClick.invoke(params.currentToken)
                     },
-                    onShopClick = {
-                        val products = params.taggedProducts
-                        if (products.size == 1) {
-                            onProductClick.invoke(products.first())
-                        } else if (products.isNotEmpty()) {
-                            onSeeAllProductsClick.invoke(products)
+                    onListingsClick = {
+                        val listings = params.taggedListings
+                        if (listings.size == 1) {
+                            onListingClick.invoke(listings.first())
+                        } else if (listings.isNotEmpty()) {
+                            onSeeAllListingsClick.invoke(listings)
                         }
                     },
-                    onCartClick = onCartClick,
+                    onMessagesClick = onMessagesClick,
                     modifier = Modifier
                         .constrainAs(actionView) {
                             end.linkTo(parent.end, 16.dp)
@@ -287,6 +287,7 @@ fun VideoItemView(
                             displayName = seller.displayName,
                             handle = seller.handle,
                             emoji = seller.emoji,
+                            city = seller.city,
                             isVerified = seller.isVerified,
                             isLiveNow = params.isSellerLiveNow,
                             onSellerClick = { onSellerClick.invoke(seller.id) },
@@ -310,12 +311,12 @@ fun VideoItemView(
                         showOwnerName = params.seller == null
                     )
 
-                    params.taggedProducts.firstOrNull()?.let { featured ->
-                        VideoProductPill(
-                            product = featured,
-                            totalTaggedCount = params.taggedProducts.size,
-                            onProductClick = { onProductClick.invoke(featured) },
-                            onSeeAllClick = { onSeeAllProductsClick.invoke(params.taggedProducts) },
+                    params.taggedListings.firstOrNull()?.let { featured ->
+                        VideoListingPill(
+                            listing = featured,
+                            totalTaggedCount = params.taggedListings.size,
+                            onListingClick = { onListingClick.invoke(featured) },
+                            onSeeAllClick = { onSeeAllListingsClick.invoke(params.taggedListings) },
                             modifier = Modifier.padding(top = 10.dp)
                         )
                     }

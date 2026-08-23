@@ -15,7 +15,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.densitech.scrollsmooth.R
-import com.densitech.scrollsmooth.ui.commerce.view.CartIconWithBadge
+import com.densitech.scrollsmooth.ui.commerce.view.MessagesIconWithBadge
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 import com.densitech.scrollsmooth.ui.video.model.VideoActionParams
 
@@ -26,17 +26,21 @@ fun VideoActionView(
     onCommentClick: (Int) -> Unit,
     onShareClick: (Int) -> Unit,
     onDownloadClick: (Int) -> Unit,
-    onShopClick: (Int) -> Unit,
-    onCartClick: () -> Unit,
+    onListingsClick: (Int) -> Unit,
+    onMessagesClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        if (params.taggedProductCount > 0) {
+        if (params.taggedListingCount > 0) {
             VideoActionItemView(
                 icon = painterResource(id = R.drawable.ic_shop_bag_24),
-                value = if (params.taggedProductCount > 1) "${params.taggedProductCount}" else "Shop",
+                value = if (params.taggedListingCount > 1) {
+                    "${params.taggedListingCount}"
+                } else {
+                    "Ad"
+                },
                 onItemClick = {
-                    onShopClick.invoke(params.token)
+                    onListingsClick.invoke(params.token)
                 },
                 modifier = Modifier.padding(bottom = 10.dp)
             )
@@ -68,11 +72,11 @@ fun VideoActionView(
             modifier = Modifier.padding(top = 10.dp),
         )
 
-        CartIconWithBadge(
-            itemCount = params.cartItemCount,
-            onClick = onCartClick,
+        MessagesIconWithBadge(
+            unreadCount = params.unreadMessageCount,
+            onClick = onMessagesClick,
             iconSize = 32,
-            label = "Cart",
+            label = "Chats",
             modifier = Modifier.padding(top = 10.dp),
         )
 
@@ -128,14 +132,14 @@ private fun VideoActionViewPreview() {
             commentCount = 10,
             shareCount = 10,
             isDownloaded = false,
-            cartItemCount = 3,
-            taggedProductCount = 2,
+            unreadMessageCount = 2,
+            taggedListingCount = 2,
         ),
         onLikeClick = {},
         onCommentClick = {},
         onShareClick = {},
         onDownloadClick = {},
-        onShopClick = {},
-        onCartClick = {},
+        onListingsClick = {},
+        onMessagesClick = {},
     )
 }

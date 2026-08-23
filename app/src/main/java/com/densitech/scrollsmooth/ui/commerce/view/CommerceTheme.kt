@@ -17,13 +17,14 @@ object CommerceColors {
     val OnSurface = Color(0xFFF4F4F6)
     val OnSurfaceMuted = Color(0xFF9A9AA6)
 
-    /** The buy colour. Used only for actions that move money. */
-    val Accent = Color(0xFFFE2C55)
-    val AccentPressed = Color(0xFFD41F44)
+    /** The contact colour. Reserved for the actions that put a buyer in touch with a seller. */
+    val Accent = Color(0xFF00B074)
+    val AccentPressed = Color(0xFF00905E)
+    val Call = Color(0xFF2E8BF0)
     val Live = Color(0xFFFF2D55)
     val Success = Color(0xFF25D07A)
     val Warning = Color(0xFFFFC53D)
-    val Discount = Color(0xFFFF4D4D)
+    val Alert = Color(0xFFFF4D4D)
     val Scrim = Color(0x99000000)
 }
 

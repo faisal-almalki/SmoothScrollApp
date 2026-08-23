@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,35 +35,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.densitech.scrollsmooth.ui.commerce.model.Product
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.formatMoney
-import com.densitech.scrollsmooth.ui.commerce.view.BuyButton
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceTopBar
-import com.densitech.scrollsmooth.ui.commerce.view.ProductImage
+import com.densitech.scrollsmooth.ui.commerce.view.ListingImage
+import com.densitech.scrollsmooth.ui.commerce.view.PrimaryButton
 import com.densitech.scrollsmooth.ui.commerce.view.SecondaryButton
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CreatorViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MyListingsViewModel
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 
 /**
- * The publishing step that turns a video into a storefront: pick which of your listings appear
- * as the shop tag while the video plays.
+ * The publishing step that makes a video shoppable: choose which of your ads appear as the tag
+ * while it plays.
  */
 @Composable
-fun TagProductsScreen(
+fun TagListingsScreen(
     videoId: String,
-    creatorViewModel: CreatorViewModel,
+    myListingsViewModel: MyListingsViewModel,
     onBack: () -> Unit,
     onPublished: () -> Unit,
-    onListProduct: () -> Unit,
+    onPostListing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val me by creatorViewModel.me.collectAsState()
-    val allProducts by creatorViewModel.allProducts.collectAsState()
-    val selectedIds by creatorViewModel.pendingVideoTags.collectAsState()
+    val me by myListingsViewModel.me.collectAsState()
+    val allListings by myListingsViewModel.allListings.collectAsState()
+    val selectedIds by myListingsViewModel.pendingVideoTags.collectAsState()
 
-    val myProducts = allProducts.filter { it.sellerId == me.id }
+    val myListings = allListings.filter { it.sellerId == me.id && !it.isSold }
+    val nowMillis = remember(myListings) { System.currentTimeMillis() }
 
     Column(
         modifier = modifier
@@ -70,12 +72,12 @@ fun TagProductsScreen(
             .background(CommerceColors.Background),
     ) {
         CommerceTopBar(
-            title = "Tag products",
+            title = "Tag your ads",
             subtitle = "Buyers tap these while your video plays",
             onBack = onBack,
         )
 
-        if (myProducts.isEmpty()) {
+        if (myListings.isEmpty()) {
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -87,21 +89,21 @@ fun TagProductsScreen(
                 Text(text = "🏷", fontSize = 48.sp)
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "You have nothing to tag yet",
+                    text = "You have no ads to tag",
                     color = CommerceColors.OnSurface,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "List a product first, then come back and attach it to this video.",
+                    text = "Post an ad first, then come back and attach it to this video.",
                     color = CommerceColors.OnSurfaceMuted,
                     fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(20.dp))
-                BuyButton(
-                    text = "List a product",
-                    onClick = onListProduct,
+                PrimaryButton(
+                    text = "Post an ad",
+                    onClick = onPostListing,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -115,11 +117,11 @@ fun TagProductsScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(myProducts, key = { it.id }) { product ->
-                    TaggableProductRow(
-                        product = product,
-                        selected = selectedIds.contains(product.id),
-                        onToggle = { creatorViewModel.togglePendingTag(product.id) },
+                items(myListings, key = { it.id }) { listing ->
+                    TaggableListingRow(
+                        listing = listing,
+                        selected = selectedIds.contains(listing.id),
+                        onToggle = { myListingsViewModel.togglePendingTag(listing.id) },
                     )
                 }
             }
@@ -135,7 +137,7 @@ fun TagProductsScreen(
         ) {
             Text(
                 text = if (selectedIds.isEmpty()) {
-                    "No products tagged. The video will post without a shop tag."
+                    "No ads tagged. The video posts without a tag."
                 } else {
                     "${selectedIds.size} tagged. The first one shows as the pill on the video."
                 },
@@ -146,15 +148,15 @@ fun TagProductsScreen(
                 SecondaryButton(
                     text = "Skip",
                     onClick = {
-                        creatorViewModel.clearPendingTags()
+                        myListingsViewModel.clearPendingTags()
                         onPublished()
                     },
                     modifier = Modifier.weight(1f),
                 )
-                BuyButton(
+                PrimaryButton(
                     text = "Post video",
                     onClick = {
-                        creatorViewModel.publishTags(videoId)
+                        myListingsViewModel.publishTags(videoId)
                         onPublished()
                     },
                     modifier = Modifier.weight(1.4f),
@@ -165,8 +167,8 @@ fun TagProductsScreen(
 }
 
 @Composable
-private fun TaggableProductRow(
-    product: Product,
+private fun TaggableListingRow(
+    listing: Listing,
     selected: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -185,10 +187,10 @@ private fun TaggableProductRow(
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ProductImage(
-            seed = product.id,
-            emoji = product.emoji,
-            imageUrl = product.imageUrl,
+        ListingImage(
+            seed = listing.id,
+            emoji = listing.emoji,
+            imageUrl = listing.imageUrl,
             emojiSize = 22,
             corner = 10.dp,
             modifier = Modifier.size(52.dp),
@@ -196,7 +198,7 @@ private fun TaggableProductRow(
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = product.title,
+                text = listing.title,
                 color = CommerceColors.OnSurface,
                 fontSize = 13.sp,
                 maxLines = 2,
@@ -205,7 +207,7 @@ private fun TaggableProductRow(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = "${product.priceCents.formatMoney()} · ${product.stock} in stock",
+                text = "${listing.priceCents.formatMoney()} · ${listing.city}",
                 color = CommerceColors.OnSurfaceMuted,
                 fontSize = 11.sp,
             )

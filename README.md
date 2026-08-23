@@ -1,149 +1,103 @@
 # SmoothScroll
 
-SmoothScroll is a video commerce app for Android: a TikTok style vertical feed where every video
-is shoppable, creators sell their own products, and live rooms let you buy while you watch.
+SmoothScroll is a video classifieds app for Android: a TikTok style vertical feed where every
+video carries an ad, sellers go live to show what they are selling, and buyers reach the seller
+directly by message or by phone. Think حراج, but the listings are videos.
 
-It is built on top of a high performance Media3 ExoPlayer feed with caching, prefetching and
-thumbnail scrubbing, so the shopping layer never costs you scroll performance.
+There is no cart and no checkout. Deals happen between the two people, the way classifieds work.
 
-## Shopping
+It is built on a high performance Media3 ExoPlayer feed with caching, prefetching and thumbnail
+scrubbing, so the marketplace layer never costs you scroll performance.
 
-- **Shoppable feed:** every video carries a product tag. A bag pill expands over the video a beat
-  after playback starts; tapping it opens the buy sheet without leaving the feed.
-- **Live shopping:** a Live tab of creators selling on camera. Each room has a running viewer
-  count, a live chat with a purchase ticker, a pinned product the seller is talking about, and a
-  flash sale clock. The live price applies only while the clock is running.
-- **Shop tab:** search across products and creators, filter by category, and a trending grid with
-  the live rooms surfaced on top.
-- **Cart and checkout:** one cart shared by the feed, the live rooms and the shop tab, with a free
-  shipping threshold, tax estimate, address form, payment method and an order confirmation.
-- **Orders:** every order is kept, including whether it was bought in the feed or in a live.
+## Buying
+
+- **Shoppable feed:** every video carries an ad tag. A pill expands over the video a beat after
+  playback starts, showing the price and the city; tapping it opens the ad without leaving the feed.
+- **Contact the seller:** message them in the app, or call them when they have chosen to publish a
+  number. Calls hand the number to the system dialler, so nothing is dialled without you pressing
+  the button, and no call permission is requested.
+- **Live rooms:** sellers showing their ads on camera, with a running viewer count and chat. The ad
+  being discussed sits pinned above the composer with call and view buttons on it.
+- **Browse:** search across ads, sellers and cities; filter by category, condition and city; newest
+  ads first.
+- **Messages:** one thread per ad, so a seller always knows which ad a question is about.
 
 ## Selling
 
-Every account on this platform is a shop, so the creator page and the storefront are the same page.
+Every account is a seller. The profile and the shop are the same page.
 
-- **Storefront:** a creator's listings, follower count, seller rating, and a shortcut into their
-  live room when they are streaming.
-- **Creator Studio:** gross sales, payout after the platform fee, units sold, orders, and the
-  listings you manage.
-- **List a product:** a short form (title, price, stock, category, one variant axis) with a live
-  preview of the card buyers will see.
-- **Tag products on a video:** the publishing step after trimming and editing, where you choose
-  which of your listings the video sells.
+- **Post an ad:** a short form — title, price, negotiable or not, category, condition, city. Nothing
+  a person filming on a phone would abandon halfway through.
+- **Contact settings:** publish a phone number or keep it private. Messages can be turned off too.
+  Clearing the number turns calls off rather than leaving a dead button on your ads.
+- **My ads:** views and enquiries per ad, and a "mark sold" toggle that pulls an ad out of browse
+  and the feed without deleting it.
+- **Tag ads on a video:** the publishing step after trimming and editing, where you choose which of
+  your ads the video advertises.
 
 ## Video playback
 
-- **Smooth Scrolling Performance:** designed to handle fast scrolling with optimized performance.
-- **Thumbnail Preview:** view video thumbnails while seeking to different durations in the video.
-- **Caching and Prefetching:** efficiently caches and prefetches video and thumbnail data.
-- **Video creation:** create a custom video by selecting a video, adding audio, trimming, and
-  adding a text overlay.
+- **Smooth scrolling performance:** designed to handle fast scrolling with optimized performance.
+- **Thumbnail preview:** view video thumbnails while seeking to different durations in the video.
+- **Caching and prefetching:** efficiently caches and prefetches video and thumbnail data.
+- **Video creation:** select a video, add audio, trim it, and add a text overlay.
 
-## Commerce architecture
+## Architecture
 
-The commerce feature lives under `ui/commerce`:
+The marketplace lives under `ui/commerce`:
 
 | Package | Responsibility |
 | --- | --- |
-| `commerce/model` | Products, sellers, cart, orders, live streams. Prices are integer minor units. |
-| `commerce/data` | Seeded catalogue and repositories (cart, orders, products, seller, live). |
-| `commerce/viewmodel` | `CartViewModel`, `ShopViewModel`, `LiveViewModel`, `CreatorViewModel`. |
-| `commerce/view` | Shared components: product card, buy sheet, price rows, feed overlay. |
-| `commerce/shop`, `commerce/cart`, `commerce/live`, `commerce/profile`, `commerce/creator` | Screens. |
+| `commerce/model` | Listings, sellers, conversations, live streams. Prices are integer minor units. |
+| `commerce/data` | Seeded catalogue and repositories (listings, messages, seller, live). |
+| `commerce/viewmodel` | `BrowseViewModel`, `MessagesViewModel`, `LiveViewModel`, `MyListingsViewModel`. |
+| `commerce/view` | Shared components: listing card, detail sheet, contact actions, feed overlay. |
+| `commerce/browse`, `commerce/messages`, `commerce/live`, `commerce/profile`, `commerce/creator` | Screens. |
 
-The commerce view models are resolved once in `MainScreen` at activity scope, so the cart the feed
-adds to is the same cart the shop tab and checkout read.
+The marketplace view models are resolved once in `MainScreen` at activity scope, so the feed, the
+live rooms and the browse tab share one set of listings and one inbox.
+
+Bottom navigation is Home · Browse · Post · Live · Account.
 
 ### What is real and what is not
 
-There is no commerce backend behind this build, so:
+There is no backend behind this build, so:
 
-- The catalogue is seeded in `CommerceCatalog`; products you list in Creator Studio are layered on
-  top of it and do enter the feed's tag pool, so your own listings show up on feed videos.
-- Cart, orders, listings, follows and video tags persist across launches via `SharedPreferences`
-  (`CommerceStore`), not a server.
-- Live rooms play a looping video source. The viewer count, chat and purchase ticker are simulated
-  in `LiveRepository`; there is no ingest or WebRTC.
-- Checkout records a payment method on the order. **Nothing is charged and no payment processor is
-  integrated.**
-- Videos you create are not uploaded, so a video you tag products on is saved against a local id
-  rather than published to the feed.
-- Products have no photographs. Each one renders as a gradient derived from its id plus an emoji,
-  so the grids stay stable and work offline.
+- The catalogue is seeded in `CommerceCatalog`; ads you post are layered on top of it and enter the
+  feed's tag pool, so your own ads show up on feed videos.
+- Listings, conversations, follows, your profile and your contact preferences persist across
+  launches via `SharedPreferences` (`CommerceStore`), not a server. Your phone number never leaves
+  the device.
+- **Messages are not delivered anywhere.** Threads are local. The first message in a thread gets one
+  automatic acknowledgement so the inbox is not dead while you try it; it is labelled as a demo
+  reply, not a seller pretending to answer.
+- Calling is real: the app builds an `ACTION_DIAL` intent and hands it to the system dialler.
+- Live rooms play a looping video source. The viewer count and chat are simulated in
+  `LiveRepository`; there is no ingest or WebRTC.
+- Videos you create are not uploaded, so a video you tag ads on is saved against a local id rather
+  than published to the feed.
+- Ads have no photographs. Each renders as a gradient derived from its id plus an emoji, so grids
+  stay stable and work offline.
+- Prices are shown in SAR and the seeded cities are Saudi. The UI is English; it is not localised
+  to Arabic or RTL yet.
 
+## Building
+
+`./gradlew assembleDebug` builds without signing secrets. `.github/workflows/branch-build.yml` runs
+that on every push to a `claude/**` branch; the release workflow builds signed APKs on
+`feat/video-creation-phase2`.
 
 # Video Demo
 
 https://github.com/user-attachments/assets/3898de67-bd3e-4132-8085-c849ce3d133c
 
-## Upcoming Features
+## Upcoming
 
-- **Adaptive Video Streaming:** Adjust video quality based on network conditions to provide a better streaming experience.
-- **Video Preview during Adaptive Streaming:** Preview video content while watching adaptive video streams.
-- **Configurable Playback Behavior:** Customize video playback settings such as auto-play and buffering strategies.
-- **Customize Video:** User can customize video by trimming video, select audio then apply to video, changing some audio and video effect, then can export that change to local
-- **Load more:** Load more video for short video
-
-## Video Playback and Thumbnail Preview
-
-When seeking through a video, the app provides a preview of the video's thumbnail to give users an idea of the content at the selected point. The thumbnails are preloaded and cached to ensure quick display.
-
-## API Response
-
-The app expects responses from the server (Fetched from JSON file) in the following format:
-
-```json
-{
-    "status": "success",
-    "video_id": "24a0033e-0e0c-42c4-9f3a-1f0ce9d1a1d8",
-    "processing_status": "completed",
-    "video_url": "https://storage.googleapis.com/smoothscroll-7252a.appspot.com/videos/video_1.mp4",
-    "title": "Video title",
-    "tags": [
-        "Tag A",
-        "TAG B",
-        "TAG C"
-    ],
-    "owner": {
-        "name": "Name of video owner",
-        "email": "Email"
-    },
-    "metadata": {
-        "duration": 25000,
-        "width": 480.0,
-        "height": 360.0,
-        "bitrate": "413kbps",
-        "codec": "H.264"
-    },
-    "thumbnails": {
-        "small": [
-            {
-                "thumbnailUrl": "https://storage.googleapis.com/smoothscroll-7252a.appspot.com/thumbnails/video_1/small/thumbnail_0.jpg",
-                "time": 0
-            }
-        ],
-        "medium": [
-            {
-                "thumbnailUrl": "https://storage.googleapis.com/smoothscroll-7252a.appspot.com/thumbnails/video_1/medium/thumbnail_0.jpg",
-                "time": 0
-            }
-        ]
-    },
-    "previews": []
-}
-```
-
-- status: Indicates the success or failure of the request.
-- video_id: Unique identifier for the video.
-- processing_status: Current processing status of the video.
-- video_url: URL where the video is hosted.
-- metadata: Contains details about the video such as duration, width, height, bitrate, and codec.
-- thumbnails: Provides URLs for thumbnails of the video at various intervals and sizes (small, medium).
-- previews: Additional preview information (currently not used in this version, will support for DASH and HLS format).
-- title: Video title
-- tags: List tag of this video
-- owner: Owner who post video
+- **Adaptive video streaming:** adjust video quality based on network conditions.
+- **Video preview during adaptive streaming.**
+- **Configurable playback behaviour:** auto-play and buffering strategies.
+- **Load more:** paginate the short video feed.
+- **Arabic and RTL localisation.**
 
 # Author
 Dennis (Duy) Bui (https://www.linkedin.com/in/duy-bui-4bb54b143/)

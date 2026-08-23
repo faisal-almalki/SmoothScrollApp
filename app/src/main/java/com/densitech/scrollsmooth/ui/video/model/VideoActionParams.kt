@@ -6,8 +6,8 @@ data class VideoActionParams(
     val commentCount: Int,
     val shareCount: Int,
     val isDownloaded: Boolean,
-    /** Number of items in the shopper's cart, badged on the cart action. */
-    val cartItemCount: Int = 0,
-    /** How many products this video is selling; hides the shop action when zero. */
-    val taggedProductCount: Int = 0,
+    /** Unread conversations, badged on the messages action. */
+    val unreadMessageCount: Int = 0,
+    /** How many ads this video is showing; hides the tag action when zero. */
+    val taggedListingCount: Int = 0,
 )

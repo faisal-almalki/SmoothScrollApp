@@ -36,12 +36,12 @@ import androidx.compose.ui.unit.sp
 import com.densitech.scrollsmooth.ui.commerce.model.LiveStream
 import com.densitech.scrollsmooth.ui.commerce.model.formatCompact
 import com.densitech.scrollsmooth.ui.commerce.model.formatMoney
-import com.densitech.scrollsmooth.ui.commerce.view.CartIconWithBadge
+import com.densitech.scrollsmooth.ui.commerce.view.MessagesIconWithBadge
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
 import com.densitech.scrollsmooth.ui.commerce.view.LiveBadge
 import com.densitech.scrollsmooth.ui.commerce.view.placeholderBrush
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
 import com.densitech.scrollsmooth.ui.commerce.viewmodel.LiveViewModel
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 
@@ -51,13 +51,14 @@ import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 @Composable
 fun LiveScreen(
     liveViewModel: LiveViewModel,
-    cartViewModel: CartViewModel,
+    messagesViewModel: MessagesViewModel,
     onOpenRoom: (String) -> Unit,
-    onOpenCart: () -> Unit,
+    onOpenMessages: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val streams by liveViewModel.streams.collectAsState()
-    val cart by cartViewModel.cart.collectAsState()
+    val conversations by messagesViewModel.conversations.collectAsState()
+    val unread = conversations.count { it.hasUnread }
 
     Column(
         modifier = modifier
@@ -80,14 +81,14 @@ fun LiveScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "${streams.size} creators selling on camera",
+                    text = "${streams.size} sellers showing their ads on camera",
                     color = CommerceColors.OnSurfaceMuted,
                     fontSize = 13.sp,
                 )
             }
-            CartIconWithBadge(
-                itemCount = cart.itemCount,
-                onClick = onOpenCart,
+            MessagesIconWithBadge(
+                unreadCount = unread,
+                onClick = onOpenMessages,
                 tint = CommerceColors.OnSurface,
                 iconSize = 26,
             )
@@ -108,8 +109,9 @@ fun LiveScreen(
                 LiveStreamCard(
                     stream = stream,
                     sellerName = liveViewModel.sellerOf(stream)?.displayName.orEmpty(),
-                    sellerEmoji = liveViewModel.sellerOf(stream)?.emoji ?: "🛍",
-                    pinnedPriceCents = liveViewModel.pinnedProductOf(stream)?.priceCents,
+                    sellerEmoji = liveViewModel.sellerOf(stream)?.emoji ?: "📦",
+                    sellerCity = liveViewModel.sellerOf(stream)?.city.orEmpty(),
+                    pinnedPriceCents = liveViewModel.pinnedListingOf(stream)?.priceCents,
                     onClick = { onOpenRoom(stream.id) },
                 )
             }
@@ -122,6 +124,7 @@ private fun LiveStreamCard(
     stream: LiveStream,
     sellerName: String,
     sellerEmoji: String,
+    sellerCity: String,
     pinnedPriceCents: Long?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -176,7 +179,7 @@ private fun LiveStreamCard(
             }
 
             Text(
-                text = "${stream.flashSaleDiscountPercent}% off live",
+                text = stream.topic,
                 color = Color.White,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -211,7 +214,7 @@ private fun LiveStreamCard(
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = sellerName,
+                    text = if (sellerCity.isBlank()) sellerName else "$sellerName · $sellerCity",
                     color = CommerceColors.OnSurfaceMuted,
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -220,7 +223,7 @@ private fun LiveStreamCard(
                 )
                 if (pinnedPriceCents != null) {
                     Text(
-                        text = "from ${pinnedPriceCents.formatMoney()}",
+                        text = pinnedPriceCents.formatMoney(),
                         color = CommerceColors.Accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,

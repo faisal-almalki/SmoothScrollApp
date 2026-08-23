@@ -34,13 +34,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import com.densitech.scrollsmooth.R
 import com.densitech.scrollsmooth.ui.commerce.data.CommerceCatalog
-import com.densitech.scrollsmooth.ui.commerce.model.Product
-import com.densitech.scrollsmooth.ui.commerce.view.AddedToCartBanner
+import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
-import com.densitech.scrollsmooth.ui.commerce.view.ProductDetailSheet
-import com.densitech.scrollsmooth.ui.commerce.view.ProductListSheet
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.ShopViewModel
+import com.densitech.scrollsmooth.ui.commerce.view.ContactBanner
+import com.densitech.scrollsmooth.ui.commerce.view.ListingDetailSheet
+import com.densitech.scrollsmooth.ui.commerce.view.ListingListSheet
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.BrowseViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
 import com.densitech.scrollsmooth.ui.video.model.ScreenState
 import com.densitech.scrollsmooth.ui.video.model.VideoItemParams
 import com.densitech.scrollsmooth.ui.video.viewmodel.VideoScreenViewModel
@@ -57,10 +57,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun VideoScreen(
     pagerState: PagerState,
     videoScreenViewModel: VideoScreenViewModel,
-    shopViewModel: ShopViewModel,
-    cartViewModel: CartViewModel,
-    onOpenCart: () -> Unit,
-    onOpenCheckout: () -> Unit,
+    browseViewModel: BrowseViewModel,
+    messagesViewModel: MessagesViewModel,
+    onOpenMessages: () -> Unit,
+    onOpenConversation: (String) -> Unit,
     onOpenSeller: (String) -> Unit,
     onOpenLive: (String) -> Unit,
 ) {
@@ -72,11 +72,13 @@ fun VideoScreen(
     val screenState = videoScreenViewModel.screenState.collectAsState()
     val videoDownloadedListState = videoScreenViewModel.videoDownloadedList.collectAsState()
 
-    // Commerce state layered over the feed.
-    val cart by cartViewModel.cart.collectAsState()
-    val banner by cartViewModel.banner.collectAsState()
-    val openProduct by shopViewModel.openProduct.collectAsState()
-    var productListSheet by remember { mutableStateOf<List<Product>?>(null) }
+    // Marketplace state layered over the feed.
+    val conversations by messagesViewModel.conversations.collectAsState()
+    val banner by messagesViewModel.banner.collectAsState()
+    val openListing by browseViewModel.openListing.collectAsState()
+    var listingListSheet by remember { mutableStateOf<List<Listing>?>(null) }
+    val unreadCount = conversations.count { it.hasUnread }
+    val nowMillis = remember(openListing, listingListSheet) { System.currentTimeMillis() }
 
     // State management
     var currentActiveIndex by remember { mutableIntStateOf(videoScreenViewModel.currentPlayingIndex) }
@@ -211,11 +213,11 @@ fun VideoScreen(
 
                         // Tagging is derived from the video id, so it only needs recomputing
                         // when the page actually shows a different video.
-                        val taggedProducts = remember(mediaInfo.videoId) {
-                            shopViewModel.productsForVideo(mediaInfo.videoId)
+                        val taggedListings = remember(mediaInfo.videoId) {
+                            browseViewModel.listingsForVideo(mediaInfo.videoId)
                         }
-                        val tagSeller = remember(taggedProducts) {
-                            shopViewModel.seller(taggedProducts.firstOrNull()?.sellerId)
+                        val tagSeller = remember(taggedListings) {
+                            browseViewModel.seller(taggedListings.firstOrNull()?.sellerId)
                         }
                         val sellerLiveStream = remember(tagSeller) {
                             tagSeller?.let { CommerceCatalog.liveStreamForSeller(it.id) }
@@ -229,20 +231,20 @@ fun VideoScreen(
                                 currentMediaSource = mediaSource,
                                 mediaInfo = mediaInfo,
                                 isDownloaded = downloadedVideoList.contains(mediaItem.localConfiguration?.uri.toString()),
-                                taggedProducts = taggedProducts,
+                                taggedListings = taggedListings,
                                 seller = tagSeller,
                                 isSellerLiveNow = sellerLiveStream != null,
-                                cartItemCount = cart.itemCount,
+                                unreadMessageCount = unreadCount,
                             ),
-                            onProductClick = { product ->
+                            onListingClick = { listing ->
                                 videoScreenViewModel.pauseAllPlayer()
-                                shopViewModel.openProduct(product)
+                                browseViewModel.openListing(listing)
                             },
-                            onSeeAllProductsClick = { products ->
+                            onSeeAllListingsClick = { listings ->
                                 videoScreenViewModel.pauseAllPlayer()
-                                productListSheet = products
+                                listingListSheet = listings
                             },
-                            onCartClick = onOpenCart,
+                            onMessagesClick = onOpenMessages,
                             onSellerClick = onOpenSeller,
                             onWatchLiveClick = {
                                 sellerLiveStream?.let { stream -> onOpenLive(stream.id) }
@@ -290,12 +292,12 @@ fun VideoScreen(
                             .statusBarsPadding()
                             .padding(CommerceDimens.ScreenPadding)
                     ) {
-                        AddedToCartBanner(
+                        ContactBanner(
                             text = banner.orEmpty(),
-                            onDismiss = cartViewModel::dismissBanner,
-                            onViewCart = {
-                                cartViewModel.dismissBanner()
-                                onOpenCart()
+                            onDismiss = messagesViewModel::dismissBanner,
+                            onOpenMessages = {
+                                messagesViewModel.dismissBanner()
+                                onOpenMessages()
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -319,37 +321,34 @@ fun VideoScreen(
         }
     }
 
-    // Buy sheet for a single tagged product.
-    openProduct?.let { product ->
-        ProductDetailSheet(
-            product = product,
-            onDismiss = shopViewModel::closeProduct,
-            onAddToCart = { selection ->
-                cartViewModel.addToCart(selection)
-                shopViewModel.closeProduct()
-            },
-            onBuyNow = { selection ->
-                cartViewModel.addToCart(selection)
-                shopViewModel.closeProduct()
-                onOpenCheckout()
+    // Detail sheet for a single tagged ad.
+    openListing?.let { listing ->
+        ListingDetailSheet(
+            listing = listing,
+            nowMillis = nowMillis,
+            onDismiss = browseViewModel::closeListing,
+            onMessageSeller = { target ->
+                browseViewModel.closeListing()
+                onOpenConversation(messagesViewModel.startConversation(target))
             },
             onOpenSeller = { sellerId ->
-                shopViewModel.closeProduct()
+                browseViewModel.closeListing()
                 onOpenSeller(sellerId)
             },
         )
     }
 
-    // Everything this video is selling, when it carries more than one product.
-    productListSheet?.let { products ->
-        ProductListSheet(
-            title = "Shop this video",
-            subtitle = "${products.size} products from this creator",
-            products = products,
-            onDismiss = { productListSheet = null },
-            onProductClick = { product ->
-                productListSheet = null
-                shopViewModel.openProduct(product)
+    // Everything this video is advertising, when it carries more than one ad.
+    listingListSheet?.let { listings ->
+        ListingListSheet(
+            title = "In this video",
+            subtitle = "${listings.size} ads from this seller",
+            listings = listings,
+            nowMillis = nowMillis,
+            onDismiss = { listingListSheet = null },
+            onListingClick = { listing ->
+                listingListSheet = null
+                browseViewModel.openListing(listing)
             },
         )
     }

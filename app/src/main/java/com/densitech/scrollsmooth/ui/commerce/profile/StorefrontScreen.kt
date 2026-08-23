@@ -19,59 +19,60 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.densitech.scrollsmooth.R
 import com.densitech.scrollsmooth.ui.commerce.data.CommerceCatalog
-import com.densitech.scrollsmooth.ui.commerce.model.ProductSelection
 import com.densitech.scrollsmooth.ui.commerce.model.formatCompact
-import com.densitech.scrollsmooth.ui.commerce.view.BuyButton
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceColors
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceDimens
 import com.densitech.scrollsmooth.ui.commerce.view.CommerceTopBar
+import com.densitech.scrollsmooth.ui.commerce.view.ContactActions
 import com.densitech.scrollsmooth.ui.commerce.view.EmptyState
+import com.densitech.scrollsmooth.ui.commerce.view.ListingCard
+import com.densitech.scrollsmooth.ui.commerce.view.ListingDetailSheet
 import com.densitech.scrollsmooth.ui.commerce.view.LiveBadge
-import com.densitech.scrollsmooth.ui.commerce.view.ProductCard
-import com.densitech.scrollsmooth.ui.commerce.view.ProductDetailSheet
+import com.densitech.scrollsmooth.ui.commerce.view.PrimaryButton
 import com.densitech.scrollsmooth.ui.commerce.view.SecondaryButton
+import com.densitech.scrollsmooth.ui.commerce.view.SellerRatingRow
+import com.densitech.scrollsmooth.ui.commerce.view.VerifiedTick
 import com.densitech.scrollsmooth.ui.commerce.view.placeholderBrush
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.CartViewModel
-import com.densitech.scrollsmooth.ui.commerce.viewmodel.ShopViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.BrowseViewModel
+import com.densitech.scrollsmooth.ui.commerce.viewmodel.MessagesViewModel
 import com.densitech.scrollsmooth.ui.utils.clickableNoRipple
 
 /**
- * A creator's shop. On this platform the creator page and the storefront are the same thing, so
- * this doubles as the profile you land on from a video.
+ * A seller's page. On this platform the profile and the shop are the same thing, so this is where
+ * a video's creator link lands: who they are, what they have for sale, and how to reach them.
  */
 @Composable
 fun StorefrontScreen(
     sellerId: String,
-    shopViewModel: ShopViewModel,
-    cartViewModel: CartViewModel,
+    browseViewModel: BrowseViewModel,
+    messagesViewModel: MessagesViewModel,
     onBack: () -> Unit,
-    onOpenCheckout: () -> Unit,
+    onOpenConversation: (String) -> Unit,
     onOpenLive: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val seller = shopViewModel.seller(sellerId)
-    val allProducts by shopViewModel.allProducts.collectAsState()
-    val following by shopViewModel.following.collectAsState()
-    val openProduct by shopViewModel.openProduct.collectAsState()
+    val allListings by browseViewModel.allListings.collectAsState()
+    val following by browseViewModel.following.collectAsState()
+    val openListing by browseViewModel.openListing.collectAsState()
 
-    val products = allProducts.filter { it.sellerId == sellerId }
+    val seller = browseViewModel.seller(sellerId)
+    val listings = allListings.filter { it.sellerId == sellerId && !it.isSold }
     val liveStream = CommerceCatalog.liveStreamForSeller(sellerId)
     val isFollowing = following.contains(sellerId)
+    val nowMillis = remember(listings) { System.currentTimeMillis() }
 
     Column(
         modifier = modifier
@@ -79,7 +80,7 @@ fun StorefrontScreen(
             .background(CommerceColors.Background),
     ) {
         CommerceTopBar(
-            title = seller?.displayName ?: "Shop",
+            title = seller?.displayName ?: "Seller",
             subtitle = seller?.atHandle,
             onBack = onBack,
         )
@@ -88,8 +89,8 @@ fun StorefrontScreen(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 EmptyState(
                     emoji = "🕳",
-                    title = "Shop not found",
-                    subtitle = "This creator is no longer selling on the platform.",
+                    title = "Seller not found",
+                    subtitle = "This account is no longer on the platform.",
                 )
             }
             return@Column
@@ -127,7 +128,7 @@ fun StorefrontScreen(
                                 value = seller.followers.formatCompact(),
                                 label = "Followers",
                             )
-                            StorefrontStat(value = products.size.toString(), label = "Listings")
+                            StorefrontStat(value = listings.size.toString(), label = "Ads")
                             StorefrontStat(
                                 value = String.format(java.util.Locale.US, "%.1f", seller.rating),
                                 label = "Rating",
@@ -146,15 +147,16 @@ fun StorefrontScreen(
                         )
                         if (seller.isVerified) {
                             Spacer(Modifier.width(5.dp))
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_verified_24),
-                                contentDescription = "Verified seller",
-                                tint = CommerceColors.Accent,
-                                modifier = Modifier.size(15.dp),
-                            )
+                            VerifiedTick(size = 15.dp)
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
+                    SellerRatingRow(
+                        rating = seller.rating,
+                        ratingCount = seller.ratingCount,
+                        textSize = 12,
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Text(
                         text = seller.bio,
                         color = CommerceColors.OnSurfaceMuted,
@@ -163,7 +165,7 @@ fun StorefrontScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Ships from ${seller.shipsFrom}",
+                        text = "Based in ${seller.city}",
                         color = CommerceColors.OnSurfaceMuted,
                         fontSize = 11.sp,
                     )
@@ -174,13 +176,13 @@ fun StorefrontScreen(
                         if (isFollowing) {
                             SecondaryButton(
                                 text = "Following",
-                                onClick = { shopViewModel.toggleFollow(sellerId) },
+                                onClick = { browseViewModel.toggleFollow(sellerId) },
                                 modifier = Modifier.weight(1f),
                             )
                         } else {
-                            BuyButton(
+                            PrimaryButton(
                                 text = "Follow",
-                                onClick = { shopViewModel.toggleFollow(sellerId) },
+                                onClick = { browseViewModel.toggleFollow(sellerId) },
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -208,9 +210,25 @@ fun StorefrontScreen(
                         }
                     }
 
+                    // Contact from the profile uses whatever ad is newest, so there is always a
+                    // thread to anchor the conversation to.
+                    val newestListing = listings.maxByOrNull { it.postedAtMillis }
+                    if (newestListing != null) {
+                        Spacer(Modifier.height(10.dp))
+                        ContactActions(
+                            seller = seller,
+                            compact = true,
+                            onMessage = {
+                                onOpenConversation(
+                                    messagesViewModel.startConversation(newestListing)
+                                )
+                            },
+                        )
+                    }
+
                     Spacer(Modifier.height(20.dp))
                     Text(
-                        text = if (products.isEmpty()) "No listings yet" else "${products.size} listings",
+                        text = if (listings.isEmpty()) "No ads right now" else "${listings.size} ads",
                         color = CommerceColors.OnSurface,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
@@ -219,10 +237,10 @@ fun StorefrontScreen(
                 }
             }
 
-            if (products.isEmpty()) {
+            if (listings.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        text = "This creator has not listed anything yet.",
+                        text = "This seller has nothing listed at the moment.",
                         color = CommerceColors.OnSurfaceMuted,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
@@ -232,38 +250,25 @@ fun StorefrontScreen(
                     )
                 }
             } else {
-                items(products, key = { it.id }) { product ->
-                    ProductCard(
-                        product = product,
-                        onClick = { shopViewModel.openProduct(product) },
-                        onAddToCart = {
-                            cartViewModel.addToCart(
-                                ProductSelection(
-                                    product = product,
-                                    options = product.defaultSelection(),
-                                    quantity = 1,
-                                    unitPriceCents = product.priceCents,
-                                )
-                            )
-                        },
+                items(listings, key = { it.id }) { listing ->
+                    ListingCard(
+                        listing = listing,
+                        nowMillis = nowMillis,
+                        onClick = { browseViewModel.openListing(listing) },
                     )
                 }
             }
         }
     }
 
-    openProduct?.let { product ->
-        ProductDetailSheet(
-            product = product,
-            onDismiss = shopViewModel::closeProduct,
-            onAddToCart = { selection ->
-                cartViewModel.addToCart(selection)
-                shopViewModel.closeProduct()
-            },
-            onBuyNow = { selection ->
-                cartViewModel.addToCart(selection)
-                shopViewModel.closeProduct()
-                onOpenCheckout()
+    openListing?.let { listing ->
+        ListingDetailSheet(
+            listing = listing,
+            nowMillis = nowMillis,
+            onDismiss = browseViewModel::closeListing,
+            onMessageSeller = { target ->
+                browseViewModel.closeListing()
+                onOpenConversation(messagesViewModel.startConversation(target))
             },
         )
     }
