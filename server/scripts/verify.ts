@@ -33,6 +33,18 @@ import {
 } from "../src/services/listings.js";
 import { listenerCount, subscribe } from "../src/lib/events.js";
 import {
+  attachPhoto,
+  confirmVideoUpload,
+  createPhotoUploadUrl,
+  createVideoUploadUrl,
+  deletePhoto,
+  getFeed,
+  listPhotos,
+  markVideoReady,
+  reorderPhotos,
+  setVideoListings,
+} from "../src/services/media.js";
+import {
   listConversations,
   listMessages,
   markConversationRead,
@@ -916,6 +928,274 @@ expect(
   "stream: unsubscribing stops delivery and frees the slot",
   listenerCount(liveThread.id) === 0 && received.length === 2,
 );
+
+/* ============================================================
+   Media — photos on ads, videos in the feed.
+   ============================================================ */
+console.log("\n\x1b[1mMedia\x1b[0m");
+
+const D0 = new Date("2026-04-01T09:00:00Z");
+const dmin = (n: number) => new Date(D0.getTime() + n * 60_000);
+
+const photog = await verifyOtp(
+  orm, "0503330001",
+  (await requestOtp(orm, "0503330001", { now: dmin(0), exposeCode: true })).devCode!,
+  { now: dmin(1) },
+);
+const intruder = await verifyOtp(
+  orm, "0503330002",
+  (await requestOtp(orm, "0503330002", { now: dmin(2), exposeCode: true })).devCode!,
+  { now: dmin(3) },
+);
+
+const photoAd = await createListing(
+  orm, photog.accountId,
+  { title: "Canon EOS R6 with lens", priceHalalas: 850_000, category: "Electronics", city: "Riyadh" },
+  { now: dmin(4) },
+);
+
+const upload = await createPhotoUploadUrl(
+  orm, photoAd.id, photog.accountId,
+  { contentType: "image/jpeg", sizeBytes: 2_400_000, filename: "front.jpg" },
+  { now: dmin(5) },
+);
+expect(
+  "upload: presigned URL issued with an expiry",
+  upload.uploadUrl.startsWith("https://") &&
+    upload.key.startsWith(`listing-photos/${photog.accountId}/`) &&
+    upload.expiresAt.getTime() === dmin(5).getTime() + 15 * 60_000,
+  upload.isPlaceholder ? "placeholder driver (no storage configured)" : "signed",
+);
+
+expect(
+  "upload: the key is namespaced to its owner",
+  !upload.key.includes(intruder.accountId),
+  "a leaked key cannot be guessed into another account",
+);
+
+try {
+  await createPhotoUploadUrl(orm, photoAd.id, photog.accountId, {
+    contentType: "application/pdf", sizeBytes: 1000,
+  });
+  bad("upload: rejects a disallowed content type");
+} catch (e) {
+  ok("upload: rejects a disallowed content type", (e as Error).message);
+}
+
+try {
+  await createPhotoUploadUrl(orm, photoAd.id, photog.accountId, {
+    contentType: "image/jpeg", sizeBytes: 40 * 1024 * 1024,
+  });
+  bad("upload: rejects an oversized file");
+} catch (e) {
+  ok("upload: rejects an oversized file", (e as Error).message);
+}
+
+try {
+  await createPhotoUploadUrl(orm, photoAd.id, intruder.accountId, {
+    contentType: "image/jpeg", sizeBytes: 1000,
+  });
+  bad("upload: a stranger cannot upload to someone else's ad");
+} catch (e) {
+  ok("upload: a stranger cannot upload to someone else's ad", (e as Error).message);
+}
+
+// Attach four photos and check the positions come out contiguous.
+const photoIds: string[] = [];
+for (let i = 0; i < 4; i++) {
+  const row = await attachPhoto(
+    orm, photoAd.id, photog.accountId,
+    { key: `listing-photos/${photog.accountId}/p${i}.jpg`, width: 1600, height: 1200 },
+    { now: dmin(6 + i) },
+  );
+  photoIds.push(row.id);
+}
+const afterAdd = await listPhotos(orm, photoAd.id);
+expect(
+  "photos: positions are 0..n-1 in order",
+  afterAdd.map((p: { position: number }) => p.position).join(",") === "0,1,2,3",
+  afterAdd.map((p: { position: number }) => p.position).join(","),
+);
+
+// Reorder — the case that trips the unique index if done naively.
+const reversed = [...photoIds].reverse();
+const afterReorder = await reorderPhotos(orm, photoAd.id, photog.accountId, reversed);
+expect(
+  "photos: reversing the order succeeds",
+  afterReorder.map((p: { id: string }) => p.id).join(",") === reversed.join(","),
+);
+expect(
+  "photos: positions stay unique and contiguous after reorder",
+  afterReorder.map((p: { position: number }) => p.position).join(",") === "0,1,2,3",
+);
+
+// A swap of just two is the tightest case for the unique index.
+const swapped = [reversed[1]!, reversed[0]!, reversed[2]!, reversed[3]!];
+const afterSwap = await reorderPhotos(orm, photoAd.id, photog.accountId, swapped);
+expect(
+  "photos: swapping two adjacent photos succeeds",
+  afterSwap.map((p: { id: string }) => p.id).join(",") === swapped.join(","),
+);
+
+try {
+  await reorderPhotos(orm, photoAd.id, photog.accountId, [photoIds[0]!]);
+  bad("photos: a partial order is refused");
+} catch (e) {
+  ok("photos: a partial order is refused", (e as Error).message);
+}
+
+try {
+  await reorderPhotos(orm, photoAd.id, intruder.accountId, swapped);
+  bad("photos: a stranger cannot reorder");
+} catch (e) {
+  ok("photos: a stranger cannot reorder", (e as Error).message);
+}
+
+// Deleting from the middle must close the gap.
+const afterDelete = await deletePhoto(orm, photoAd.id, photog.accountId, swapped[1]!);
+expect(
+  "photos: deleting closes the gap",
+  afterDelete.length === 3 &&
+    afterDelete.map((p: { position: number }) => p.position).join(",") === "0,1,2",
+  afterDelete.map((p: { position: number }) => p.position).join(","),
+);
+
+try {
+  await deletePhoto(orm, photoAd.id, intruder.accountId, afterDelete[0]!.id);
+  bad("photos: a stranger cannot delete");
+} catch (e) {
+  ok("photos: a stranger cannot delete", (e as Error).message);
+}
+
+// The cap.
+for (let i = 0; i < 7; i++) {
+  await attachPhoto(orm, photoAd.id, photog.accountId, {
+    key: `listing-photos/${photog.accountId}/extra${i}.jpg`,
+  });
+}
+try {
+  await attachPhoto(orm, photoAd.id, photog.accountId, {
+    key: `listing-photos/${photog.accountId}/eleventh.jpg`,
+  });
+  bad("photos: the ten-photo cap holds");
+} catch (e) {
+  ok("photos: the ten-photo cap holds", (e as Error).message);
+}
+
+/* ---------- videos ---------- */
+
+const made = await createVideoUploadUrl(
+  orm, photog.accountId,
+  { contentType: "video/mp4", sizeBytes: 18_000_000, caption: "Camera walkthrough" },
+  { now: dmin(30) },
+);
+expect("video: created as UPLOADING", made.video.status === "UPLOADING");
+
+try {
+  await createVideoUploadUrl(orm, photog.accountId, { contentType: "video/avi", sizeBytes: 100 });
+  bad("video: rejects a disallowed container");
+} catch (e) {
+  ok("video: rejects a disallowed container", (e as Error).message);
+}
+
+let seamCalledWith: string | null = null;
+const confirmed = await confirmVideoUpload(
+  orm, made.video.id, photog.accountId, made.upload.key,
+  { now: dmin(31), onVideoUploaded: async (_id, key) => { seamCalledWith = key; } },
+);
+expect(
+  "video: confirming moves it to PROCESSING and calls the transcoder seam",
+  confirmed.status === "PROCESSING" && seamCalledWith === made.upload.key,
+);
+
+try {
+  await confirmVideoUpload(orm, made.video.id, photog.accountId, made.upload.key, { now: dmin(32) });
+  bad("video: cannot be confirmed twice");
+} catch (e) {
+  ok("video: cannot be confirmed twice", (e as Error).message);
+}
+
+const feedBeforeReady = await getFeed(orm, { limit: 10 });
+expect(
+  "feed: a PROCESSING video is not shown",
+  !feedBeforeReady.items.some((v: { id: string }) => v.id === made.video.id),
+  "not playable, so not in the feed",
+);
+
+const ready = await markVideoReady(orm, made.video.id, {
+  playbackUrl: "https://cdn.example.com/v/abc.m3u8",
+  thumbnailUrl: "https://cdn.example.com/v/abc.jpg",
+  durationMs: 24_000,
+  width: 1080,
+  height: 1920,
+});
+expect("video: the transcoder callback flips it to READY", ready.status === "READY");
+
+// Tag two ads, checking that position 0 is the pill.
+const secondAd = await createListing(
+  orm, photog.accountId,
+  { title: "Camera bag", priceHalalas: 45_000, category: "Electronics", city: "Riyadh" },
+  { now: dmin(35) },
+);
+await setVideoListings(orm, made.video.id, photog.accountId, [photoAd.id, secondAd.id]);
+
+const readyFeed = await getFeed(orm, { limit: 10 });
+const feedItem = readyFeed.items.find((v: { id: string }) => v.id === made.video.id) as
+  | { listings: { id: string; title: string }[]; sellerHandle: string }
+  | undefined;
+expect(
+  "feed: a READY video appears with its ads in order",
+  feedItem?.listings.length === 2 && feedItem.listings[0]!.id === photoAd.id,
+  feedItem?.listings.map((l) => l.title).join(" then "),
+);
+
+try {
+  await setVideoListings(orm, made.video.id, intruder.accountId, [photoAd.id]);
+  bad("video: a stranger cannot tag ads on it");
+} catch (e) {
+  ok("video: a stranger cannot tag ads on it", (e as Error).message);
+}
+
+const otherAd = await createListing(
+  orm, intruder.accountId,
+  { title: "Not my ad", priceHalalas: 10_000, category: "Other", city: "Jeddah" },
+  { now: dmin(36) },
+);
+try {
+  await setVideoListings(orm, made.video.id, photog.accountId, [otherAd.id]);
+  bad("video: cannot tag someone else's ad");
+} catch (e) {
+  ok("video: cannot tag someone else's ad", (e as Error).message);
+}
+
+// The feed honours blocks the same way browse does.
+const feedViewer = await verifyOtp(
+  orm, "0503330003",
+  (await requestOtp(orm, "0503330003", { now: dmin(40), exposeCode: true })).devCode!,
+  { now: dmin(41) },
+);
+const beforeFeedBlock = await getFeed(orm, { limit: 10, viewerId: feedViewer.accountId });
+const sawVideo = beforeFeedBlock.items.some((v: { id: string }) => v.id === made.video.id);
+await blockAccount(orm, feedViewer.accountId, photog.accountId);
+const afterFeedBlock = await getFeed(orm, { limit: 10, viewerId: feedViewer.accountId });
+expect(
+  "feed: a blocked seller disappears from it too",
+  sawVideo && !afterFeedBlock.items.some((v: { id: string }) => v.id === made.video.id),
+);
+await unblockAccount(orm, feedViewer.accountId, photog.accountId);
+
+// A sold ad drops off the video without removing the video.
+await setListingSold(orm, secondAd.id, photog.accountId, true);
+const feedAfterSold = await getFeed(orm, { limit: 10 });
+const itemAfterSold = feedAfterSold.items.find((v: { id: string }) => v.id === made.video.id) as
+  | { listings: unknown[] }
+  | undefined;
+expect(
+  "feed: a sold ad drops off the video",
+  itemAfterSold?.listings.length === 1,
+  `${itemAfterSold?.listings.length} ad still tagged`,
+);
+
 
 
 

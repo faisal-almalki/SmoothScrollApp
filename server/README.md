@@ -14,8 +14,8 @@ API and database for the SmoothScroll video classifieds app.
 | 2 | Auth — phone OTP + JWT | **done, verified** |
 | 3 | Listings API — CRUD, search, paging | **done, verified** |
 | 4 | Messaging API + realtime | **done, verified** |
-| 5 | Media uploads — photos, video | next |
-| 6 | Wire the Android app to the API | pending |
+| 5 | Media uploads — photos, video | **done, verified** |
+| 6 | Wire the Android app to the API | next |
 | 7 | Deploy + push notifications | pending |
 
 ---
@@ -78,7 +78,11 @@ Listings      ✓ keyset paging, no gaps or repeats even mid-bump
 Messaging     ✓ thread reuse  ✓ unread moves for the recipient only
               ✓ non-participants refused  ✓ consent and blocks respected
               ✓ history survives a removed ad  ✓ live delivery, no leaks
-All checks passed  86 passed, 0 failed
+Media         ✓ presigned uploads  ✓ type and size limits  ✓ 10-photo cap
+              ✓ positions contiguous after add, reorder, swap, delete
+              ✓ owner-only on every mutation  ✓ UPLOADING → PROCESSING → READY
+              ✓ feed hides unready video, sold ads and blocked sellers
+All checks passed  111 passed, 0 failed
 ```
 
 The auth checks drive the **same service functions the API calls**, not a copy:
@@ -197,6 +201,51 @@ their own. A socket's duplex channel would buy nothing.
 > a listener on B. Before scaling out, swap that file's `publish`/`subscribe` for
 > Postgres `LISTEN`/`NOTIFY` or Redis pub/sub. Nothing outside it changes — which
 > is why it is isolated there.
+
+---
+
+## Media
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /listings/:id/photos/upload-url` | Presigned PUT. Owner only. |
+| `POST /listings/:id/photos` | Confirm the upload, attach at the next position. |
+| `PATCH /listings/:id/photos/order` | Reorder. |
+| `DELETE /listings/:id/photos/:photoId` | Remove and close the gap. |
+| `POST /videos/upload-url` · `/:id/confirm` | Upload a feed video. |
+| `POST /videos/:id/ready` | Transcoder callback. Shared-secret header, not a user token. |
+| `POST /videos/:id/listings` | Tag your ads. Position 0 is the pill. |
+| `GET /feed` | Ready videos newest first, each with its ordered ads. |
+
+**The phone uploads straight to storage.** The API only issues a presigned URL
+and records the key afterwards, so photos and video never pass through this
+server — which is what keeps it small and cheap to run.
+
+**SigV4 is implemented in `src/lib/storage.ts` with `node:crypto`**, not the AWS
+SDK, which is tens of megabytes for what is one signature. It is S3-compatible,
+so Cloudflare R2, Backblaze B2 and S3 all work by changing environment variables
+only. With none set, a clearly marked placeholder driver is used so local
+development and the verifier need no cloud account.
+
+**Object keys are namespaced by owner**, so a leaked key cannot be edited into
+someone else's namespace.
+
+### Why reordering photos takes two statements
+
+The obvious single `UPDATE … FROM (VALUES …)` fails. The unique index on
+`(listing_id, position)` is checked row by row, so any statement that swaps two
+positions trips it mid-flight. That was verified against Postgres directly
+rather than assumed:
+
+```
+SINGLE STATEMENT: FAILED -> duplicate key value violates unique constraint
+```
+
+So the rows are parked in negative positions first — which no valid row ever
+uses — and then written to their final values. The two statements are not in a
+transaction because the Neon HTTP driver cannot hold one open; the window is
+tiny and owner-only, and a crash between them leaves every position negative,
+which a repair pass at the top of the same function corrects on the next call.
 
 ---
 

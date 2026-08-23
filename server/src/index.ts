@@ -9,6 +9,7 @@ import { InvalidPhoneError } from "./lib/phone.js";
 import type { AppBindings } from "./middleware/auth.js";
 import { accountRoutes, authRoutes } from "./routes/auth.js";
 import { listingRoutes, safetyRoutes, sellerRoutes } from "./routes/listings.js";
+import { feedRoutes, photoRoutes, videoRoutes } from "./routes/media.js";
 import { conversationRoutes } from "./routes/messaging.js";
 
 const app = new Hono<AppBindings>();
@@ -30,6 +31,10 @@ app.route("/account", accountRoutes);
 app.route("/listings", listingRoutes);
 app.route("/sellers", sellerRoutes);
 app.route("/conversations", conversationRoutes);
+// Photo routes share the /listings prefix; Hono merges the two routers.
+app.route("/listings", photoRoutes);
+app.route("/videos", videoRoutes);
+app.route("/feed", feedRoutes);
 app.route("/", safetyRoutes);
 
 app.notFound((c) =>
