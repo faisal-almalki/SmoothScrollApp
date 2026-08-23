@@ -11,8 +11,8 @@ API and database for the SmoothScroll video classifieds app.
 | Phase | What | State |
 | --- | --- | --- |
 | 1 | Database schema + migrations | **done, verified** |
-| 2 | Auth — phone OTP + JWT | next |
-| 3 | Listings API — CRUD, search, paging | pending |
+| 2 | Auth — phone OTP + JWT | **done, verified** |
+| 3 | Listings API — CRUD, search, paging | next |
 | 4 | Messaging API + realtime | pending |
 | 5 | Media uploads — photos, video | pending |
 | 6 | Wire the Android app to the API | pending |
@@ -68,11 +68,57 @@ Queries       ✓ browse  ✓ full-text search  ✓ city filter
 Constraints   ✓ no calls without a number   ✓ no negative price
               ✓ no self-follow  ✓ no self-message  ✓ no empty message
               ✓ case-insensitive handles  ✓ no duplicate reports
-All checks passed  23 passed, 0 failed
+Auth          ✓ phone normalisation  ✓ codes stored hashed  ✓ no replay
+              ✓ wrong-code lockout  ✓ expiry  ✓ per-number rate limit
+              ✓ refresh rotation  ✓ logout  ✓ deletion + grace period
+All checks passed  41 passed, 0 failed
 ```
+
+The auth checks drive the **same service functions the API calls**, not a copy:
+`requestOtp`, `verifyOtp`, `refreshSession` and friends take the database and
+the current time as arguments, so the verifier can point them at PGlite and
+fast-forward the clock to test expiry.
 
 It runs in CI on every push, so a broken migration is caught before it ever
 reaches a real database.
+
+---
+
+## Auth
+
+Sign-in is a phone number and a six-digit SMS code. There are no passwords.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /auth/otp/request` | Send a code. Rate limited to 3 per number per 15 min. |
+| `POST /auth/otp/verify` | Exchange the code for tokens. Creates the account on first use. |
+| `POST /auth/refresh` | Rotate the refresh token, get a new access token. |
+| `POST /auth/logout` | Revoke one session. |
+| `POST /auth/logout-everywhere` | Revoke all sessions for the account. |
+| `GET /account` | The signed-in profile. |
+| `DELETE /account?confirm=true` | In-app deletion, as Google Play requires. |
+
+**No SMS provider is wired up yet.** Outside production the code is written to
+the log and returned in the response as `devCode`, so the Android app can be
+built and tested end to end today. `SmsSender` in `src/services/auth.ts` is the
+one function to implement — Unifonic or Twilio are a single HTTP call from
+there.
+
+A few decisions worth knowing:
+
+- **Codes are HMAC'd, not hashed.** Six digits fall to a rainbow table in
+  seconds, so the code is HMAC'd with the server secret and mixed with the phone
+  number. A database dump on its own yields nothing.
+- **The attempt counter increments before the comparison**, so crashing
+  mid-check cannot be used to retry for free. Five wrong tries burn the code.
+- **Refresh tokens rotate.** Exchanging one revokes it. A stolen token is
+  usable at most once, and the theft surfaces as the real user being signed out.
+- **`auth_phone` is never returned by the API**, not even to its owner. The
+  number buyers see is a separate column that only appears when `allow_calls` is
+  on.
+- **Deletion is soft, with a 30-day grace period.** Every session is revoked
+  immediately so the app stops working at once, but signing in again during the
+  window brings the account back.
 
 ---
 

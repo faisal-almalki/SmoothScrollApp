@@ -1,6 +1,21 @@
 import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+
+// Set before anything reads it: the auth service signs tokens with this.
+process.env.JWT_SECRET ??= "verify-only-secret-not-used-anywhere-real";
+
+import * as schema from "../src/db/schema.js";
+import { normaliseSaudiPhone } from "../src/lib/phone.js";
+import {
+  loadActiveAccount,
+  logout,
+  refreshSession,
+  requestAccountDeletion,
+  requestOtp,
+  verifyOtp,
+} from "../src/services/auth.js";
 
 /**
  * Runs the generated migration against a real Postgres engine (PGlite is
@@ -259,6 +274,136 @@ const orphans = await db.query<{ count: number }>(
   [TECH],
 );
 expect("deleting an account removes its ads", orphans.rows[0]!.count === 0);
+
+/* ============================================================
+   Auth — the same service code the API runs, driven against
+   this in-process Postgres with time passed in explicitly.
+   ============================================================ */
+console.log("\n\x1b[1mAuth\x1b[0m");
+
+const orm = drizzle(db, { schema });
+const T0 = new Date("2026-01-01T10:00:00Z");
+const minutes = (n: number) => new Date(T0.getTime() + n * 60_000);
+
+expect(
+  "phone: every shape normalises to one number",
+  ["0512345678", "512345678", "+966512345678", "00966512345678", "05 1234 5678"].every(
+    (input) => normaliseSaudiPhone(input) === "+966512345678",
+  ),
+  "+966512345678",
+);
+
+try {
+  normaliseSaudiPhone("0412345678");
+  bad("phone: rejects a non-mobile number");
+} catch {
+  ok("phone: rejects a non-mobile number", "landline prefix refused");
+}
+
+const signup = await requestOtp(orm, "0512345678", { now: T0, exposeCode: true });
+expect("otp: issued", typeof signup.devCode === "string" && signup.devCode.length === 6);
+
+const stored = await db.query<{ code_hash: string }>(`SELECT code_hash FROM otp_codes LIMIT 1`);
+expect(
+  "otp: stored hashed, never in the clear",
+  !stored.rows[0]!.code_hash.includes(signup.devCode!),
+  "column holds an HMAC",
+);
+
+const session = await verifyOtp(orm, "0512345678", signup.devCode!, { now: minutes(1) });
+expect("otp: correct code signs in", session.isNewAccount && !!session.accessToken);
+
+const created = await db.query<{ handle: string }>(
+  `SELECT handle FROM accounts WHERE auth_phone = '+966512345678'`,
+);
+expect(
+  "signup: account created with a usable handle",
+  created.rows[0]?.handle === "user5678",
+  created.rows[0]?.handle,
+);
+
+try {
+  await verifyOtp(orm, "0512345678", signup.devCode!, { now: minutes(2) });
+  bad("otp: a used code cannot be replayed");
+} catch (e) {
+  ok("otp: a used code cannot be replayed", (e as Error).message);
+}
+
+const wrong = await requestOtp(orm, "0555111222", { now: minutes(3), exposeCode: true });
+const wrongCode = wrong.devCode === "000000" ? "111111" : "000000";
+try {
+  await verifyOtp(orm, "0555111222", wrongCode, { now: minutes(4) });
+  bad("otp: wrong code rejected");
+} catch (e) {
+  ok("otp: wrong code rejected", (e as Error).message);
+}
+
+let lockedOut = "";
+for (let i = 0; i < 5; i++) {
+  try {
+    await verifyOtp(orm, "0555111222", wrongCode, { now: minutes(4) });
+  } catch (e) {
+    lockedOut = (e as Error).message;
+  }
+}
+expect("otp: locks out after repeated wrong codes", lockedOut.includes("Too many wrong attempts"), lockedOut);
+
+const stale = await requestOtp(orm, "0555333444", { now: minutes(10), exposeCode: true });
+try {
+  await verifyOtp(orm, "0555333444", stale.devCode!, { now: minutes(16) });
+  bad("otp: expires after five minutes");
+} catch (e) {
+  ok("otp: expires after five minutes", (e as Error).message);
+}
+
+let limited = "";
+for (let i = 0; i < 4; i++) {
+  try {
+    await requestOtp(orm, "0566777888", { now: minutes(20) });
+  } catch (e) {
+    limited = (e as Error).message;
+  }
+}
+expect("otp: rate limited per number", limited.includes("Too many codes"), limited);
+
+const rotated = await refreshSession(orm, session.refreshToken, { now: minutes(30) });
+expect("refresh: issues a new pair", rotated.refreshToken !== session.refreshToken);
+try {
+  await refreshSession(orm, session.refreshToken, { now: minutes(31) });
+  bad("refresh: a spent token cannot be reused");
+} catch (e) {
+  ok("refresh: a spent token cannot be reused", (e as Error).message);
+}
+
+await logout(orm, rotated.refreshToken, minutes(32));
+try {
+  await refreshSession(orm, rotated.refreshToken, { now: minutes(33) });
+  bad("logout: revokes the session");
+} catch (e) {
+  ok("logout: revokes the session", (e as Error).message);
+}
+
+expect("auth: a live account resolves", (await loadActiveAccount(orm, session.accountId)) !== null);
+
+await requestAccountDeletion(orm, session.accountId, minutes(40));
+expect("deletion: account stops resolving", (await loadActiveAccount(orm, session.accountId)) === null);
+
+const rowSurvives = await db.query<{ count: number }>(
+  `SELECT count(*)::int AS count FROM accounts WHERE auth_phone = '+966512345678' AND deleted_at IS NOT NULL`,
+);
+expect(
+  "deletion: row kept for the grace period",
+  rowSurvives.rows[0]!.count === 1,
+  "soft-deleted, recoverable",
+);
+
+const returning = await requestOtp(orm, "0512345678", { now: minutes(50), exposeCode: true });
+const restored = await verifyOtp(orm, "0512345678", returning.devCode!, { now: minutes(51) });
+expect(
+  "deletion: signing in again cancels it",
+  !restored.isNewAccount && (await loadActiveAccount(orm, restored.accountId)) !== null,
+);
+
 
 console.log(
   `\n[1m${failed === 0 ? "[32mAll checks passed" : "[31mFAILURES"}[0m  ${passed} passed, ${failed} failed\n`,

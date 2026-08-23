@@ -1,6 +1,7 @@
 import { neon, neonConfig, Pool } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { drizzle as drizzleHttp } from "drizzle-orm/neon-http";
+import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema.js";
 
 /**
@@ -39,3 +40,11 @@ export function createPooledDb() {
 }
 
 export { schema };
+
+/**
+ * Deliberately loose so one set of service functions runs against Neon in
+ * production and against PGlite in `scripts/verify.ts`. Both are Postgres and
+ * both satisfy the query builder; pinning the concrete driver type here would
+ * force the tests to fake something instead of exercising the real code.
+ */
+export type Database = PgDatabase<any, any, any>;
