@@ -7,13 +7,12 @@ import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
 
 /*
 *@Author: Dennis
 *Description: A use case to fetch list of audio to play in the video
 * */
-class GetAudiosUseCase @Inject constructor() {
+class GetAudiosUseCase {
     suspend fun fetchAudios(): List<AudioResponse> {
         return withContext(Dispatchers.IO) {
             try {

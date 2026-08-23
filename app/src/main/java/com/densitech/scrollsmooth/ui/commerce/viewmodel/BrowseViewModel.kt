@@ -6,16 +6,13 @@ import com.densitech.scrollsmooth.ui.commerce.data.SellerRepository
 import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.ListingCategory
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import javax.inject.Inject
 
 /**
  * Browsing state for the Browse tab and for any surface that needs to open a listing sheet.
  */
-@HiltViewModel
-class BrowseViewModel @Inject constructor() : ViewModel() {
+class BrowseViewModel() : ViewModel() {
 
     val allListings = ListingRepository.listings
     val following = SellerRepository.following

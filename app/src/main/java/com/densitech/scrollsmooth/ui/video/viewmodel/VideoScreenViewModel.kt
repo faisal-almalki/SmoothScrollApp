@@ -35,19 +35,16 @@ import com.densitech.scrollsmooth.ui.video.model.ScreenState
 import com.densitech.scrollsmooth.ui.video.prefetch.CacheSingleton
 import com.densitech.scrollsmooth.ui.video.prefetch.MediaItemSource
 import com.densitech.scrollsmooth.ui.video.prefetch.PlayerPool
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.chromium.net.CronetEngine
 import java.util.concurrent.Executors
-import javax.inject.Inject
 import kotlin.math.abs
 
 @UnstableApi
-@HiltViewModel
-class VideoScreenViewModel @Inject constructor(private val getVideosUseCase: GetVideosUseCase = GetVideosUseCase()) :
+class VideoScreenViewModel(private val getVideosUseCase: GetVideosUseCase = GetVideosUseCase()) :
     ViewModel(), DownloadServiceHelper.Listener {
     private val _playList: MutableStateFlow<List<MediaItem>> = MutableStateFlow(listOf())
 

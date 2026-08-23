@@ -7,17 +7,14 @@ import com.densitech.scrollsmooth.ui.commerce.data.api.ApiClient
 import com.densitech.scrollsmooth.ui.commerce.data.api.ApiException
 import com.densitech.scrollsmooth.ui.commerce.data.api.TokenStore
 import com.densitech.scrollsmooth.ui.commerce.push.PushTokens
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /** Which half of the sign-in flow is on screen. */
 enum class AuthStep { PHONE, CODE }
 
-@HiltViewModel
-class AuthViewModel @Inject constructor() : ViewModel() {
+class AuthViewModel() : ViewModel() {
 
     val isSignedIn = TokenStore.isSignedIn
 

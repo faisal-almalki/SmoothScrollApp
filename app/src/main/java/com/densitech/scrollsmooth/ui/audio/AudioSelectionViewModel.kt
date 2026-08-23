@@ -4,14 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.densitech.scrollsmooth.ui.video_transformation.model.AudioResponse
 import com.densitech.scrollsmooth.ui.video_transformation.viewmodel.GetAudiosUseCase
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@HiltViewModel
-class AudioSelectionViewModel @Inject constructor(
+class AudioSelectionViewModel(
     private val getAudiosUseCase: GetAudiosUseCase = GetAudiosUseCase(),
 ) : ViewModel() {
 

@@ -7,19 +7,16 @@ import com.densitech.scrollsmooth.ui.commerce.data.MessageRepository
 import com.densitech.scrollsmooth.ui.commerce.model.Conversation
 import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /**
  * The inbox and the individual threads. Contacting a seller is the only "conversion" in this app,
  * so this sits at activity scope alongside browsing.
  */
-@HiltViewModel
-class MessagesViewModel @Inject constructor() : ViewModel() {
+class MessagesViewModel() : ViewModel() {
 
     val conversations = MessageRepository.conversations
 

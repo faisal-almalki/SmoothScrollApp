@@ -10,17 +10,14 @@ import com.densitech.scrollsmooth.ui.commerce.model.ListingCategory
 import com.densitech.scrollsmooth.ui.commerce.model.ListingCondition
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
 import com.densitech.scrollsmooth.ui.commerce.model.stableHash
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import javax.inject.Inject
 
 /**
  * The selling side: your profile, your contact preferences, the ads you have posted and which of
  * your videos each ad is attached to.
  */
-@HiltViewModel
-class MyListingsViewModel @Inject constructor() : ViewModel() {
+class MyListingsViewModel() : ViewModel() {
 
     val me = SellerRepository.me
     val allListings = ListingRepository.listings

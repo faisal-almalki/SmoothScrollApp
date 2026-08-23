@@ -9,16 +9,13 @@ import android.provider.MediaStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.densitech.scrollsmooth.ui.video_creation.model.DTOLocalVideo
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
 
-@HiltViewModel
-class VideoCreationViewModel @Inject constructor() : ViewModel() {
+class VideoCreationViewModel() : ViewModel() {
 
     private val _localVideos: MutableStateFlow<List<DTOLocalVideo>> = MutableStateFlow(emptyList())
     val localVideos = _localVideos.asStateFlow()

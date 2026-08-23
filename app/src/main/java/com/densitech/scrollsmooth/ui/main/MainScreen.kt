@@ -22,7 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -79,17 +79,17 @@ private val FULL_SCREEN_ROUTES = setOf(
 @Composable
 fun MainScreen(
     navController: NavHostController,
-    videoScreenViewModel: VideoScreenViewModel = hiltViewModel(),
-    videoCreationViewModel: VideoCreationViewModel = hiltViewModel(),
-    videoTransformationViewModel: VideoTransformationViewModel = hiltViewModel(),
-    audioSelectionViewModel: AudioSelectionViewModel = hiltViewModel(),
+    videoScreenViewModel: VideoScreenViewModel = viewModel(),
+    videoCreationViewModel: VideoCreationViewModel = viewModel(),
+    videoTransformationViewModel: VideoTransformationViewModel = viewModel(),
+    audioSelectionViewModel: AudioSelectionViewModel = viewModel(),
     // Marketplace view models are resolved here, at activity scope, so the feed, the live rooms
     // and the browse tab all share one set of listings and one inbox.
-    browseViewModel: BrowseViewModel = hiltViewModel(),
-    messagesViewModel: MessagesViewModel = hiltViewModel(),
-    liveViewModel: LiveViewModel = hiltViewModel(),
-    myListingsViewModel: MyListingsViewModel = hiltViewModel(),
-    authViewModel: AuthViewModel = hiltViewModel(),
+    browseViewModel: BrowseViewModel = viewModel(),
+    messagesViewModel: MessagesViewModel = viewModel(),
+    liveViewModel: LiveViewModel = viewModel(),
+    myListingsViewModel: MyListingsViewModel = viewModel(),
+    authViewModel: AuthViewModel = viewModel(),
 ) {
     val tabTitles = listOf(Screen.Home, Screen.Browse, Screen.Add, Screen.Live, Screen.Profile)
 

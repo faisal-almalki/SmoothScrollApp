@@ -7,9 +7,8 @@ import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
 
-class GetVideosUseCase @Inject constructor() {
+class GetVideosUseCase {
     suspend fun fetchVideos(): List<MediaInfo> {
         return withContext(Dispatchers.IO) {
             try {

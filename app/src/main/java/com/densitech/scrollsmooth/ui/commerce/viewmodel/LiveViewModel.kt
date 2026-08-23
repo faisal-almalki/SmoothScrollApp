@@ -9,22 +9,19 @@ import com.densitech.scrollsmooth.ui.commerce.model.LiveChatKind
 import com.densitech.scrollsmooth.ui.commerce.model.LiveChatMessage
 import com.densitech.scrollsmooth.ui.commerce.model.LiveStream
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 import kotlin.random.Random
 
 /**
  * Drives one live room at a time: the chat ticker and the viewer count. The simulation only runs
  * while a room is on screen, so leaving the room stops the work.
  */
-@HiltViewModel
-class LiveViewModel @Inject constructor() : ViewModel() {
+class LiveViewModel() : ViewModel() {
 
     private val _streams = MutableStateFlow(LiveRepository.liveStreams())
     val streams = _streams.asStateFlow()

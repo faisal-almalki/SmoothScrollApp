@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.net.toUri
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.C
@@ -147,7 +147,7 @@ private fun rememberExoPlayer(
 @Composable
 @Preview
 private fun AudioSelectionBottomSheetPreview() {
-    AudioSelectionBottomSheet(audioSelectionViewModel = hiltViewModel(), onSelectedAudio = {
+    AudioSelectionBottomSheet(audioSelectionViewModel = viewModel(), onSelectedAudio = {
 
     }) {
 

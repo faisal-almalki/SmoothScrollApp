@@ -13,13 +13,11 @@ import com.densitech.scrollsmooth.ui.text.model.TextOverlayParams
 import com.densitech.scrollsmooth.ui.utils.NUMBER_OF_FRAME_ITEM
 import com.densitech.scrollsmooth.ui.video_creation.model.DTOLocalThumbnail
 import com.densitech.scrollsmooth.ui.video_creation.model.DTOLocalVideo
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
 
 /*
 * @Author: Dennis
@@ -31,8 +29,7 @@ import javax.inject.Inject
 * 5. Handle text overlay
 * 6. Control exo player from view
 * */
-@HiltViewModel
-class VideoTransformationViewModel @Inject constructor(
+class VideoTransformationViewModel(
 
 ) : ViewModel() {
     private val _thumbnails: MutableStateFlow<List<DTOLocalThumbnail>> =
