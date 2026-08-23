@@ -59,6 +59,8 @@ fun ProfileScreen(
     onOpenSettings: () -> Unit,
     onOpenSeller: (String) -> Unit,
     modifier: Modifier = Modifier,
+    isSignedIn: Boolean = false,
+    onOpenLogin: () -> Unit = {},
 ) {
     val me by myListingsViewModel.me.collectAsState()
     val allListings by myListingsViewModel.allListings.collectAsState()
@@ -126,6 +128,18 @@ fun ProfileScreen(
         }
 
         Column(modifier = Modifier.padding(horizontal = CommerceDimens.ScreenPadding)) {
+            // Browsing works signed out, so the prompt lives here rather than
+            // as a wall in front of the app.
+            if (!isSignedIn) {
+                ProfileRow(
+                    emoji = "🔐",
+                    title = "Sign in",
+                    subtitle = "Needed to message sellers and post ads",
+                    onClick = onOpenLogin,
+                    modifier = Modifier.padding(bottom = 18.dp),
+                )
+            }
+
             SectionHeader(title = "Selling")
             Spacer(Modifier.height(10.dp))
 

@@ -1,5 +1,8 @@
 package com.densitech.scrollsmooth.ui.commerce.data
 
+import com.densitech.scrollsmooth.ui.commerce.data.api.ApiClient
+import com.densitech.scrollsmooth.ui.commerce.data.api.ContactPreferencesBody
+import com.densitech.scrollsmooth.ui.commerce.data.api.ProfileBody
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +60,17 @@ object SellerRepository {
             city = city.ifBlank { _me.value.city },
         )
         persistMe(updated)
+        CommerceSync.push {
+            ApiClient.updateProfile(
+                ProfileBody(
+                    displayName = updated.displayName,
+                    handle = updated.handle,
+                    bio = updated.bio,
+                    emoji = updated.emoji,
+                    city = updated.city,
+                ),
+            )
+        }
     }
 
     /**
@@ -69,16 +83,30 @@ object SellerRepository {
         allowMessages: Boolean,
     ) {
         val cleanedNumber = phoneNumber.trim()
-        persistMe(
-            _me.value.copy(
-                phoneNumber = cleanedNumber,
-                allowCalls = allowCalls && cleanedNumber.isNotBlank(),
-                allowMessages = allowMessages,
-            )
+        val updated = _me.value.copy(
+            phoneNumber = cleanedNumber,
+            allowCalls = allowCalls && cleanedNumber.isNotBlank(),
+            allowMessages = allowMessages,
         )
+        persistMe(updated)
+        CommerceSync.push {
+            ApiClient.updateContactPreferences(
+                ContactPreferencesBody(
+                    publicPhone = updated.phoneNumber.ifBlank { null },
+                    allowCalls = updated.allowCalls,
+                    allowMessages = updated.allowMessages,
+                ),
+            )
+        }
     }
 
-    fun isMe(sellerId: String?): Boolean = sellerId == MY_SELLER_ID
+    /** Adopts the signed-in profile the server returned. */
+    fun applyRemoteProfile(seller: Seller) {
+        persistMe(seller)
+    }
+
+    fun isMe(sellerId: String?): Boolean =
+        sellerId == MY_SELLER_ID || (sellerId != null && sellerId == _me.value.id)
 
     fun customSeller(id: String?): Seller? = if (isMe(id)) _me.value else null
 
@@ -89,6 +117,9 @@ object SellerRepository {
         if (!updated.add(sellerId)) updated.remove(sellerId)
         _following.value = updated
         CommerceStore.writeValue<Set<String>>(KEY_FOLLOWING, updated)
+        CommerceSync.push {
+            if (updated.contains(sellerId)) ApiClient.follow(sellerId) else ApiClient.unfollow(sellerId)
+        }
     }
 
     private fun persistMe(seller: Seller) {

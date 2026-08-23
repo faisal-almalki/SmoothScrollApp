@@ -2,6 +2,7 @@ package com.densitech.scrollsmooth.ui.commerce.data
 
 import com.densitech.scrollsmooth.ui.commerce.model.ChatMessage
 import com.densitech.scrollsmooth.ui.commerce.model.Conversation
+import com.densitech.scrollsmooth.ui.commerce.data.api.ApiClient
 import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,26 @@ object MessageRepository {
         (_conversations.value.flatMap { it.messages }.maxOfOrNull { it.id } ?: 0L) + 1L
 
     val unreadCount: Int get() = _conversations.value.count { it.hasUnread }
+
+    /**
+     * Adopts the server's inbox. Local drafts are not a concern here — messages
+     * are sent immediately — so the server's list simply wins, except that any
+     * thread only known locally is kept so a just-opened conversation does not
+     * vanish before the next refresh.
+     */
+    fun applyRemoteConversations(remote: List<Conversation>) {
+        if (remote.isEmpty()) return
+        val remoteIds = remote.map { it.id }.toSet()
+        val localOnly = _conversations.value.filterNot { it.id in remoteIds }
+        persist((remote + localOnly).sortedByDescending { it.updatedAtMillis })
+    }
+
+    /** Replaces one thread's messages with what the server has. */
+    fun applyRemoteMessages(conversationId: String, messages: List<ChatMessage>) {
+        val existing = conversation(conversationId) ?: return
+        replace(existing.copy(messages = messages))
+        nextMessageId = (messages.maxOfOrNull { it.id } ?: nextMessageId) + 1L
+    }
 
     fun conversation(id: String?): Conversation? =
         id?.let { wanted -> _conversations.value.firstOrNull { it.id == wanted } }
@@ -54,7 +75,21 @@ object MessageRepository {
             )
             persist(listOf(created) + _conversations.value)
         }
+        CommerceSync.push {
+            val opened = ApiClient.openConversation(listing.id)
+            // The server owns thread identity; adopt its id so later sends and
+            // reads address the same row.
+            adoptServerId(localId = id, serverId = opened.id)
+        }
         return id
+    }
+
+    /** Re-keys a locally created thread once the server tells us its real id. */
+    private fun adoptServerId(localId: String, serverId: String) {
+        if (localId == serverId) return
+        val existing = conversation(localId) ?: return
+        val others = _conversations.value.filterNot { it.id == localId || it.id == serverId }
+        persist((listOf(existing.copy(id = serverId)) + others).sortedByDescending { it.updatedAtMillis })
     }
 
     fun send(conversationId: String, text: String, nowMillis: Long) {
@@ -72,6 +107,7 @@ object MessageRepository {
             messages = existing.messages + message,
             updatedAtMillis = nowMillis,
         ))
+        CommerceSync.push { ApiClient.sendMessage(conversationId, trimmed) }
     }
 
     /**
@@ -100,6 +136,7 @@ object MessageRepository {
         val existing = conversation(conversationId) ?: return
         if (!existing.hasUnread) return
         replace(existing.copy(hasUnread = false))
+        CommerceSync.push { ApiClient.markConversationRead(conversationId) }
     }
 
     fun delete(conversationId: String) {

@@ -16,6 +16,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +31,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.densitech.scrollsmooth.ui.audio.AudioSelectionViewModel
+import com.densitech.scrollsmooth.ui.commerce.auth.AuthViewModel
+import com.densitech.scrollsmooth.ui.commerce.auth.LoginScreen
 import com.densitech.scrollsmooth.ui.commerce.browse.BrowseScreen
 import com.densitech.scrollsmooth.ui.commerce.creator.TagListingsScreen
 import com.densitech.scrollsmooth.ui.commerce.live.LiveRoomScreen
@@ -69,6 +72,7 @@ private val FULL_SCREEN_ROUTES = setOf(
     Screen.AccountSettings.route,
     Screen.Storefront.route,
     Screen.TagListings.route,
+    Screen.Login.route,
 )
 
 @OptIn(UnstableApi::class)
@@ -85,6 +89,7 @@ fun MainScreen(
     messagesViewModel: MessagesViewModel = hiltViewModel(),
     liveViewModel: LiveViewModel = hiltViewModel(),
     myListingsViewModel: MyListingsViewModel = hiltViewModel(),
+    authViewModel: AuthViewModel = hiltViewModel(),
 ) {
     val tabTitles = listOf(Screen.Home, Screen.Browse, Screen.Add, Screen.Live, Screen.Profile)
 
@@ -116,6 +121,8 @@ fun MainScreen(
 
         })
 
+    val isSignedIn by authViewModel.isSignedIn.collectAsState()
+
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
@@ -132,6 +139,7 @@ fun MainScreen(
     val openSeller: (String) -> Unit = { navController.navigate(Screen.Storefront.create(it)) }
     val openLiveRoom: (String) -> Unit = { navController.navigate(Screen.LiveRoom.create(it)) }
     val openPostListing: () -> Unit = { navController.navigate(Screen.PostListing.route) }
+    val openLogin: () -> Unit = { navController.navigate(Screen.Login.route) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -227,6 +235,8 @@ fun MainScreen(
                     onOpenMessages = openInbox,
                     onOpenSettings = { navController.navigate(Screen.AccountSettings.route) },
                     onOpenSeller = openSeller,
+                    isSignedIn = isSignedIn,
+                    onOpenLogin = openLogin,
                 )
             }
 
@@ -303,6 +313,13 @@ fun MainScreen(
                     myListingsViewModel = myListingsViewModel,
                     onBack = { navController.popBackStack() },
                     onPosted = { navController.popBackStack() },
+                )
+            }
+
+            composable(Screen.Login.route) {
+                LoginScreen(
+                    authViewModel = authViewModel,
+                    onDismiss = { navController.popBackStack() },
                 )
             }
 

@@ -21,6 +21,7 @@ sealed class Screen(val route: String, val title: String, val resourceId: Int) {
     data object MyListings : Screen("my_listings", "My ads", 0)
     data object PostListing : Screen("post_listing", "Post an ad", 0)
     data object AccountSettings : Screen("account_settings", "Contact settings", 0)
+    data object Login : Screen("login", "Sign in", 0)
 
     data object LiveRoom : Screen("live_room/{streamId}", "Live room", 0) {
         const val ARG_STREAM_ID = "streamId"

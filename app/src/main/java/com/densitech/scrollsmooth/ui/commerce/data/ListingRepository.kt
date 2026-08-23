@@ -3,6 +3,8 @@ package com.densitech.scrollsmooth.ui.commerce.data
 import com.densitech.scrollsmooth.ui.commerce.model.Listing
 import com.densitech.scrollsmooth.ui.commerce.model.ListingCategory
 import com.densitech.scrollsmooth.ui.commerce.model.Seller
+import com.densitech.scrollsmooth.ui.commerce.data.api.ApiClient
+import com.densitech.scrollsmooth.ui.commerce.data.api.CreateListingBody
 import com.densitech.scrollsmooth.ui.commerce.model.VideoListingTag
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +23,9 @@ object ListingRepository {
         CommerceStore.readOrNull<List<Listing>>(KEY_MY_LISTINGS) ?: emptyList()
     )
 
+    /** Empty until the first successful call; the seed stands in until then. */
+    private val _remoteListings = MutableStateFlow<List<Listing>>(emptyList())
+
     private val _listings = MutableStateFlow(CommerceCatalog.seedListings() + _myListings.value)
     val listings: StateFlow<List<Listing>> = _listings.asStateFlow()
 
@@ -37,15 +42,50 @@ object ListingRepository {
 
     fun listingsOf(sellerId: String): List<Listing> = _listings.value.filter { it.sellerId == sellerId }
 
-    fun seller(id: String?): Seller? = CommerceCatalog.seller(id) ?: SellerRepository.customSeller(id)
+    fun seller(id: String?): Seller? =
+        CommerceCatalog.seller(id)
+            ?: SellerRepository.customSeller(id)
+            ?: id?.let { _remoteSellers.value[it] }
+
+    /**
+     * Sellers fetched alongside a browse page, so a card can show who is selling
+     * without a second round trip.
+     */
+    private val _remoteSellers = MutableStateFlow<Map<String, Seller>>(emptyMap())
+
+    /**
+     * Replaces the seeded catalogue with what the server returned. Anything the
+     * user posted locally is kept on top, so an ad they just created does not
+     * blink out while the next refresh is in flight.
+     */
+    fun applyRemoteListings(remote: List<Listing>, sellers: List<Seller>) {
+        _remoteListings.value = remote
+        _remoteSellers.value = sellers.associateBy { it.id }
+        recompose()
+    }
 
     fun post(listing: Listing) {
         val updated = _myListings.value.filterNot { it.id == listing.id } + listing
         persistMine(updated)
+        CommerceSync.push {
+            ApiClient.createListing(
+                CreateListingBody(
+                    title = listing.title,
+                    description = listing.description,
+                    priceHalalas = listing.priceCents,
+                    isNegotiable = listing.isNegotiable,
+                    category = listing.category,
+                    condition = listing.condition.name,
+                    emoji = listing.emoji,
+                    city = listing.city,
+                ),
+            )
+        }
     }
 
     fun remove(listingId: String) {
         persistMine(_myListings.value.filterNot { it.id == listingId })
+        CommerceSync.push { ApiClient.removeListing(listingId) }
     }
 
     /** Marking an ad sold keeps it on the profile but takes it out of browse and the feed. */
@@ -54,6 +94,7 @@ object ListingRepository {
             if (it.id == listingId) it.copy(isSold = isSold) else it
         }
         persistMine(updated)
+        CommerceSync.push { ApiClient.markSold(listingId, isSold) }
     }
 
     /**
@@ -102,6 +143,17 @@ object ListingRepository {
     private fun persistMine(updated: List<Listing>) {
         _myListings.value = updated
         CommerceStore.writeValue(KEY_MY_LISTINGS, updated)
-        _listings.value = CommerceCatalog.seedListings() + updated
+        recompose()
+    }
+
+    /**
+     * The visible catalogue is the server's list when there is one and the seed
+     * when there is not, with the user's own ads layered on top either way.
+     */
+    private fun recompose() {
+        val base = _remoteListings.value.ifEmpty { CommerceCatalog.seedListings() }
+        val mine = _myListings.value
+        val mineIds = mine.map { it.id }.toSet()
+        _listings.value = base.filterNot { it.id in mineIds } + mine
     }
 }
