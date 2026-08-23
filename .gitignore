@@ -31,3 +31,9 @@ google-services.json
 
 # Android Profiling
 *.hprof
+# Node / backend
+node_modules/
+server/node_modules/
+server/dist/
+.env
+.env.local
