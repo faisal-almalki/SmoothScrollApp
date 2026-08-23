@@ -20,6 +20,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // 10.0.2.2 is the host machine as seen from the Android emulator, so a
+        // debug build talks to a server running on the developer's laptop.
+        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8787\"")
     }
 
     signingConfigs {
@@ -39,6 +43,8 @@ android {
 
     buildTypes {
         getByName("release") {
+            // Point this at the deployed API before shipping.
+            buildConfigField("String", "API_BASE_URL", "\"https://api.smoothscroll.app\"")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -70,6 +76,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -109,4 +116,5 @@ dependencies {
     implementation(libs.kotlinx.serialization)
     implementation(libs.coil)
     implementation(libs.permission)
+    implementation(libs.okhttp)
 }
