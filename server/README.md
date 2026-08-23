@@ -12,8 +12,8 @@ API and database for the SmoothScroll video classifieds app.
 | --- | --- | --- |
 | 1 | Database schema + migrations | **done, verified** |
 | 2 | Auth — phone OTP + JWT | **done, verified** |
-| 3 | Listings API — CRUD, search, paging | next |
-| 4 | Messaging API + realtime | pending |
+| 3 | Listings API — CRUD, search, paging | **done, verified** |
+| 4 | Messaging API + realtime | next |
 | 5 | Media uploads — photos, video | pending |
 | 6 | Wire the Android app to the API | pending |
 | 7 | Deploy + push notifications | pending |
@@ -71,7 +71,11 @@ Constraints   ✓ no calls without a number   ✓ no negative price
 Auth          ✓ phone normalisation  ✓ codes stored hashed  ✓ no replay
               ✓ wrong-code lockout  ✓ expiry  ✓ per-number rate limit
               ✓ refresh rotation  ✓ logout  ✓ deletion + grace period
-All checks passed  41 passed, 0 failed
+Listings      ✓ keyset paging, no gaps or repeats even mid-bump
+              ✓ combined filters  ✓ phone gated on consent  ✓ ownership
+              ✓ sold/relist  ✓ bump cooldown  ✓ view counting
+              ✓ follower counter stays honest  ✓ blocking cuts both ways
+All checks passed  66 passed, 0 failed
 ```
 
 The auth checks drive the **same service functions the API calls**, not a copy:
@@ -119,6 +123,37 @@ A few decisions worth knowing:
 - **Deletion is soft, with a 30-day grace period.** Every session is revoked
   immediately so the app stops working at once, but signing in again during the
   window brings the account back.
+
+---
+
+## Listings
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /listings` | Browse. Filters: `q`, `city`, `category`, `condition`, `minPrice`, `maxPrice`, `sellerId`, `limit`, `cursor`. |
+| `GET /listings/:id` | One ad with photos and seller. Counts a view. |
+| `POST /listings` | Post an ad. |
+| `PATCH /listings/:id` | Edit. Owner only. |
+| `POST /listings/:id/sold` | Toggle sold. Owner only. |
+| `DELETE /listings/:id` | Remove. Owner only. |
+| `POST /listings/:id/bump` | Move back to the top. Once per day. |
+| `POST /sellers/:id/follow` · `DELETE` | Follow and unfollow. |
+| `POST /reports` · `POST /blocks` · `DELETE /blocks/:id` | Safety. |
+
+**Paging is keyset, not `OFFSET`.** The cursor encodes `(bumped_at, id)`. `OFFSET`
+gets slower as the table grows, and — worse for a feed people scroll — silently
+skips or repeats ads when one is bumped between pages. The verifier tests exactly
+that case: it pages through, bumps an ad mid-scroll, and asserts no row repeats.
+
+**A seller's number leaves the database through one `CASE` expression** and
+nowhere else, so a route that forgets to check cannot leak it.
+
+**Blocking cuts both ways.** If you block someone, their ads vanish from your
+browse *and* yours vanish from theirs — otherwise a blocked person can tell they
+were blocked by watching the ads stay visible.
+
+**Removal is a status change, not a delete.** Conversations reference the ad, and
+a buyer's inbox should not lose its subject line because a seller tidied up.
 
 ---
 

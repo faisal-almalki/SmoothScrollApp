@@ -6,6 +6,7 @@ import { join } from "node:path";
 // Set before anything reads it: the auth service signs tokens with this.
 process.env.JWT_SECRET ??= "verify-only-secret-not-used-anywhere-real";
 
+import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { normaliseSaudiPhone } from "../src/lib/phone.js";
 import {
@@ -16,6 +17,20 @@ import {
   requestOtp,
   verifyOtp,
 } from "../src/services/auth.js";
+import {
+  blockAccount,
+  browseListings,
+  bumpListing,
+  createListing,
+  followSeller,
+  getListing,
+  removeListing,
+  reportSomething,
+  setListingSold,
+  unblockAccount,
+  unfollowSeller,
+  updateListing,
+} from "../src/services/listings.js";
 
 /**
  * Runs the generated migration against a real Postgres engine (PGlite is
@@ -403,6 +418,264 @@ expect(
   "deletion: signing in again cancels it",
   !restored.isNewAccount && (await loadActiveAccount(orm, restored.accountId)) !== null,
 );
+
+/* ============================================================
+   Listings — browse, ownership, follows and blocking, driven
+   through the same service functions the routes call.
+   ============================================================ */
+console.log("\n\x1b[1mListings\x1b[0m");
+
+const L0 = new Date("2026-02-01T09:00:00Z");
+const lmin = (n: number) => new Date(L0.getTime() + n * 60_000);
+const hours = (n: number) => new Date(L0.getTime() + n * 3_600_000);
+
+const sellerA = await verifyOtp(
+  orm, "0501110001",
+  (await requestOtp(orm, "0501110001", { now: lmin(0), exposeCode: true })).devCode!,
+  { now: lmin(1) },
+);
+const sellerB = await verifyOtp(
+  orm, "0501110002",
+  (await requestOtp(orm, "0501110002", { now: lmin(2), exposeCode: true })).devCode!,
+  { now: lmin(3) },
+);
+const shopper = await verifyOtp(
+  orm, "0501110003",
+  (await requestOtp(orm, "0501110003", { now: lmin(4), exposeCode: true })).devCode!,
+  { now: lmin(5) },
+);
+
+// Twelve ads from seller A, one minute apart so the ordering is deterministic.
+const posted: string[] = [];
+for (let i = 0; i < 12; i++) {
+  const row = await createListing(
+    orm, sellerA.accountId,
+    {
+      title: `Test ad ${String(i).padStart(2, "0")} camera`,
+      description: "Verification fixture.",
+      priceHalalas: (i + 1) * 10_000,
+      category: i % 2 === 0 ? "Electronics" : "Furniture",
+      condition: i % 3 === 0 ? "NEW" : "USED",
+      city: i % 2 === 0 ? "Riyadh" : "Jeddah",
+    },
+    { now: lmin(10 + i) },
+  );
+  posted.push(row.id);
+}
+const sellerBAd = await createListing(
+  orm, sellerB.accountId,
+  { title: "Seller B bicycle", priceHalalas: 55_000, category: "Other", city: "Dammam" },
+  { now: lmin(30) },
+);
+ok("seeded", "13 ads across 2 sellers");
+
+// Keyset paging must return every row exactly once, with no gaps or repeats.
+const seen: string[] = [];
+let cursor: string | null = null;
+let pages = 0;
+do {
+  const page = await browseListings(orm, { limit: 5, ...(cursor ? { cursor } : {}) });
+  seen.push(...page.items.map((r: { id: string }) => r.id));
+  cursor = page.nextCursor;
+  pages++;
+} while (cursor && pages < 20);
+
+const fixtureSeen = seen.filter((id) => posted.includes(id) || id === sellerBAd.id);
+expect(
+  "paging: every ad returned exactly once",
+  new Set(fixtureSeen).size === fixtureSeen.length && fixtureSeen.length === 13,
+  `${pages} pages, ${fixtureSeen.length} ads, no duplicates`,
+);
+
+// Bumping mid-scroll is exactly what breaks OFFSET paging; a keyset survives it.
+const firstPage = await browseListings(orm, { limit: 5 });
+await bumpListing(orm, posted[0]!, sellerA.accountId, { now: hours(48) });
+const secondPage = await browseListings(orm, { limit: 5, cursor: firstPage.nextCursor! });
+const overlap = firstPage.items
+  .map((r: { id: string }) => r.id)
+  .filter((id: string) => secondPage.items.some((r: { id: string }) => r.id === id));
+expect("paging: a bump mid-scroll does not repeat rows", overlap.length === 0);
+
+const searched = await browseListings(orm, { q: "camera", limit: 50 });
+expect(
+  "browse: full-text filter",
+  searched.items.length === 12,
+  `"camera" → ${searched.items.length}`,
+);
+
+const combined = await browseListings(orm, {
+  q: "camera",
+  city: "Riyadh",
+  minPriceHalalas: 30_000,
+  maxPriceHalalas: 90_000,
+  limit: 50,
+});
+const inRange = combined.items.every(
+  (r: { city: string; priceHalalas: number }) =>
+    r.city === "Riyadh" && r.priceHalalas >= 30_000 && r.priceHalalas <= 90_000,
+);
+expect(
+  "browse: filters combine",
+  inRange && combined.items.length > 0,
+  `${combined.items.length} ads in Riyadh between SAR 300 and 900`,
+);
+
+const byCondition = await browseListings(orm, { condition: "NEW", sellerId: sellerA.accountId, limit: 50 });
+expect(
+  "browse: condition + seller filter",
+  byCondition.items.length === 4 && byCondition.items.every((r: { condition: string }) => r.condition === "NEW"),
+  `${byCondition.items.length} new ads`,
+);
+
+// The number must only ever come out when the seller published it.
+await orm
+  .update(schema.accounts)
+  .set({ publicPhone: "+966501110001", allowCalls: true })
+  .where(eq(schema.accounts.id, sellerA.accountId));
+const withPhone = await browseListings(orm, { sellerId: sellerA.accountId, limit: 1 });
+const withoutPhone = await browseListings(orm, { sellerId: sellerB.accountId, limit: 1 });
+expect(
+  "browse: phone shown only when published",
+  withPhone.items[0]!.sellerPhone === "+966501110001" && withoutPhone.items[0]!.sellerPhone === null,
+);
+
+// Ownership.
+try {
+  await updateListing(orm, posted[1]!, sellerB.accountId, { title: "Hijacked" });
+  bad("ownership: a stranger cannot edit an ad");
+} catch (e) {
+  ok("ownership: a stranger cannot edit an ad", (e as Error).message);
+}
+try {
+  await removeListing(orm, posted[1]!, shopper.accountId);
+  bad("ownership: a stranger cannot delete an ad");
+} catch (e) {
+  ok("ownership: a stranger cannot delete an ad", (e as Error).message);
+}
+const edited = await updateListing(orm, posted[1]!, sellerA.accountId, { priceHalalas: 12_345 });
+expect("ownership: the owner can edit", edited.priceHalalas === 12_345);
+
+// Sold and removed both leave browse; only removal hides the ad entirely.
+await setListingSold(orm, posted[2]!, sellerA.accountId, true);
+const afterSoldBrowse = await browseListings(orm, { q: "camera", limit: 50 });
+expect(
+  "sold: leaves browse",
+  !afterSoldBrowse.items.some((r: { id: string }) => r.id === posted[2]),
+  `${afterSoldBrowse.items.length} still listed`,
+);
+await setListingSold(orm, posted[2]!, sellerA.accountId, false);
+const relisted = await browseListings(orm, { q: "camera", limit: 50 });
+expect("sold: can be relisted", relisted.items.some((r: { id: string }) => r.id === posted[2]));
+
+await removeListing(orm, posted[3]!, sellerA.accountId);
+try {
+  await getListing(orm, posted[3]!);
+  bad("removed: the ad is gone");
+} catch (e) {
+  ok("removed: the ad is gone", (e as Error).message);
+}
+
+// Bump cooldown.
+try {
+  await bumpListing(orm, posted[4]!, sellerA.accountId, { now: lmin(20) });
+  bad("bump: cooled down for a day");
+} catch (e) {
+  ok("bump: cooled down for a day", (e as Error).message);
+}
+const bumped = await bumpListing(orm, posted[4]!, sellerA.accountId, { now: hours(30) });
+expect("bump: allowed after the cooldown", bumped.bumpedAt.getTime() === hours(30).getTime());
+
+// View counting, including the seller not inflating their own.
+const before = await getListing(orm, posted[5]!, { viewerId: shopper.accountId, countView: true });
+const after = await getListing(orm, posted[5]!, { viewerId: shopper.accountId, countView: true });
+expect("views: counted for visitors", after.viewCount === before.viewCount + 1);
+const ownView = await getListing(orm, posted[5]!, { viewerId: sellerA.accountId, countView: true });
+const stillSame = await getListing(orm, posted[5]!);
+expect("views: the seller's own visit does not count", stillSame.viewCount === ownView.viewCount);
+
+// Follows keep the denormalised counter honest.
+await followSeller(orm, shopper.accountId, sellerA.accountId);
+const twice = await followSeller(orm, shopper.accountId, sellerA.accountId);
+const afterFollow = (await orm
+  .select({ n: schema.accounts.followerCount })
+  .from(schema.accounts)
+  .where(eq(schema.accounts.id, sellerA.accountId)))[0]!;
+expect(
+  "follow: counted once even when repeated",
+  afterFollow.n === 1 && twice.changed === false,
+  `follower_count = ${afterFollow.n}`,
+);
+await unfollowSeller(orm, shopper.accountId, sellerA.accountId);
+await unfollowSeller(orm, shopper.accountId, sellerA.accountId);
+const afterUnfollow = (await orm
+  .select({ n: schema.accounts.followerCount })
+  .from(schema.accounts)
+  .where(eq(schema.accounts.id, sellerA.accountId)))[0]!;
+expect(
+  "follow: unfollowing twice cannot go negative",
+  afterUnfollow.n === 0,
+  `follower_count = ${afterUnfollow.n}`,
+);
+
+// Blocking hides ads in both directions. The blocker needs an ad of their own
+// for the reverse direction to be observable at all.
+const shopperAd = await createListing(
+  orm, shopper.accountId,
+  { title: "Shopper spare monitor", priceHalalas: 40_000, category: "Electronics", city: "Riyadh" },
+  { now: lmin(40) },
+);
+
+const beforeBlock = await browseListings(orm, { viewerId: shopper.accountId, limit: 50 });
+const sawSellerB = beforeBlock.items.some((r: { id: string }) => r.id === sellerBAd.id);
+const sellerBBefore = await browseListings(orm, { viewerId: sellerB.accountId, limit: 50 });
+const sawShopperAd = sellerBBefore.items.some((r: { id: string }) => r.id === shopperAd.id);
+
+await blockAccount(orm, shopper.accountId, sellerB.accountId);
+
+const afterBlock = await browseListings(orm, { viewerId: shopper.accountId, limit: 50 });
+expect(
+  "block: the blocked seller's ads disappear",
+  sawSellerB && !afterBlock.items.some((r: { id: string }) => r.id === sellerBAd.id),
+);
+
+// The person who was blocked also stops seeing the blocker, so blocking cannot
+// be detected by the ads simply staying visible.
+const sellerBView = await browseListings(orm, { viewerId: sellerB.accountId, limit: 50 });
+expect(
+  "block: it cuts both ways",
+  sawShopperAd && !sellerBView.items.some((r: { id: string }) => r.id === shopperAd.id),
+  "the blocked seller stops seeing the blocker's ads too",
+);
+
+// An unrelated seller is untouched by someone else's block.
+expect(
+  "block: unrelated sellers are unaffected",
+  sellerBView.items.some((r: { id: string }) => posted.includes(r.id)),
+  "seller A's ads still visible to seller B",
+);
+
+try {
+  await getListing(orm, sellerBAd.id, { viewerId: shopper.accountId });
+  bad("block: a blocked ad cannot be opened directly");
+} catch (e) {
+  ok("block: a blocked ad cannot be opened directly", (e as Error).message);
+}
+
+await unblockAccount(orm, shopper.accountId, sellerB.accountId);
+const afterUnblock = await browseListings(orm, { viewerId: shopper.accountId, limit: 50 });
+expect(
+  "block: unblocking restores them",
+  afterUnblock.items.some((r: { id: string }) => r.id === sellerBAd.id),
+);
+
+// Reporting is idempotent for the reporter.
+const firstReport = await reportSomething(orm, shopper.accountId, "LISTING", posted[6]!, "spam");
+const secondReport = await reportSomething(orm, shopper.accountId, "LISTING", posted[6]!, "spam");
+expect(
+  "report: filed once, repeating is not an error",
+  firstReport.alreadyReported === false && secondReport.alreadyReported === true,
+);
+
 
 
 console.log(

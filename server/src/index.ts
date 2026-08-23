@@ -8,6 +8,7 @@ import { ApiError, errorBody } from "./lib/http.js";
 import { InvalidPhoneError } from "./lib/phone.js";
 import type { AppBindings } from "./middleware/auth.js";
 import { accountRoutes, authRoutes } from "./routes/auth.js";
+import { listingRoutes, safetyRoutes, sellerRoutes } from "./routes/listings.js";
 
 const app = new Hono<AppBindings>();
 
@@ -25,6 +26,9 @@ app.get("/health", (c) => c.json({ ok: true, at: new Date().toISOString() }));
 
 app.route("/auth", authRoutes);
 app.route("/account", accountRoutes);
+app.route("/listings", listingRoutes);
+app.route("/sellers", sellerRoutes);
+app.route("/", safetyRoutes);
 
 app.notFound((c) =>
   c.json(errorBody(ApiError.notFound("No such endpoint.")), 404),
