@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "spike-expo-feed",
-    "slug": "spike-expo-feed",
+    "name": "حراج فيديو",
+    "slug": "haraj-video",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.harajvideo.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,13 +17,26 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "app.harajvideo.mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-video"
-    ]
+      "expo-router",
+      "expo-video",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "للسماح بتصوير مقاطع لإعلاناتك",
+          "microphonePermission": "للسماح بتسجيل الصوت مع الفيديو"
+        }
+      ],
+      "expo-secure-store",
+      "expo-image"
+    ],
+    "scheme": "harajvideo",
+    "newArchEnabled": true
   }
 }
